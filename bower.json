@@ -2,6 +2,5 @@
   "name": "angular-pdf-js",
   "version": "0.0.1",
   "dependencies": {
-      "woodman": "~1.1.0"
   }
 }

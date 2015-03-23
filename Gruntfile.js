@@ -35,7 +35,7 @@ module.exports = function (grunt) {
 
     grunt.registerTask('default', [
         'test',
-        'build'
+        'build_lib'
     ]);
 
     grunt.registerTask("release", "Release a new version - bumps bower.json, git tags, commits and pushes it", function (target) {

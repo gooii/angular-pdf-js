@@ -1,0 +1,16 @@
+ngData:
+  image: normalised/data-container:latest
+  volumes:
+    - ./:/data
+  privileged: true
+
+ngToolkit:
+  image: normalised/ng-toolkit:latest
+  volumes:
+    # Use our own ssh key here for github
+    - ~/.ssh/id_rsa:/root/.ssh/id_rsa
+    - ~/.ssh/known_hosts:/root/.ssh/known_hosts
+  volumes_from:
+    - ngData
+  privileged: true
+  working_dir: "/data"

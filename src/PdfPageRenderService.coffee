@@ -49,8 +49,8 @@ class PdfPageRenderService
 
   cache = []
 
-  @$inject: [   '$q', '$log', '$timeout', 'PublicationModel', 'PdfPageTextService']
-  constructor: (@$q,   @log,  @$timeout,  @publicationModel,   @textService) ->
+  @$inject: [   '$q', '$log', '$timeout', 'PdfPageTextService']
+  constructor: (@$q,   @log,  @$timeout,  @textService) ->
     @clear()
 
   clear: () =>
@@ -64,7 +64,7 @@ class PdfPageRenderService
 
   # Request a single page to be rendered using the supplied viewport and canvas
   # @returns [RenderJob] a render job with a promise which is resolved when the page has been rendered
-  renderPage: (page, viewport, canvas, textLayerDiv) =>
+  renderPage: (page, renderConfig) =>
 
     @log.log('Rendering page %O', page)
     # Check cache to see if page has been rendered
@@ -73,20 +73,20 @@ class PdfPageRenderService
       @log.info('Page exists in cache. Do something clever here')
 
     renderContext = {
-      canvasContext: @createDrawingContext(canvas, viewport)
-      viewport: viewport
+      canvasContext: @createDrawingContext(renderConfig.canvas, renderConfig.viewport)
+      viewport: renderConfig.viewport
     }
 
     deferred = @$q.defer()
     pageIndex = ~~(page.pageNumber - 1)
     renderJob = new RenderJob(page,renderContext, deferred)
-    renderJob.textDiv = textLayerDiv
-    if @publicationModel.textContent[pageIndex]
+    renderJob.textDiv = renderConfig.textLayerDiv
+    if @textService.textContent[pageIndex]
       @log.log('Text content available for %s', pageIndex)
       return @addToQueue(renderJob)
     else
       @log.log('Waiting for text %s', pageIndex)
-      textPromise = @publicationModel.extractPageText(page)
+      textPromise = @textService.extractPageText(page)
       t = _.partial(@textReady, renderJob)
       te = _.partial(@textError, renderJob)
       textPromise.then t, te
@@ -111,14 +111,14 @@ class PdfPageRenderService
     deferred = @$q.defer()
 
     # Get the page info model
-    page = @publicationModel.getPage(number)
+    page = @model.getPageInfo(number)
     if not page
       @log.error('Page not found in model')
       deferred.reject()
       return deferred
 
     # get the PDFPageProxy
-    pdfPage = @publicationModel.getPageSource(page)
+    pdfPage = @model.getPdfPageProxy(page)
 
     if not pdfPage
       @log.error('pdfPage doesnt exist %O', pdfPage)
@@ -223,12 +223,12 @@ class PdfPageRenderService
 
     @log.log('DoRenderJob %s %O', job.page.pageIndex, job.context)
     if job.textDiv
-      if @publicationModel.textContent[job.page.pageIndex]
-        textContent = @publicationModel.textContent[job.page.pageIndex]
+      if @textService.textContent[job.page.pageIndex]
+        textContent = @textService.textContent[job.page.pageIndex]
         tlbOptions = {textLayerDiv:job.textDiv, pageIndex:job.page.pageIndex, viewport:job.context.viewport}
         @log.log('TLB Options %O', tlbOptions)
         textLayer = new TextLayerBuilder(tlbOptions);
-        @publicationModel.textLayers[job.page.pageIndex] = textLayer
+        @textService.textLayers[job.page.pageIndex] = textLayer
         @log.log('Text Layer %O. Text content %O', textLayer, textContent)
         textLayer.setTextContent(textContent)
         job.context.textLayer = textLayer

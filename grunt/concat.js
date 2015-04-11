@@ -3,7 +3,7 @@ module.exports = {
     separator: ';'
   },
   dist: {
-    src: ['PDF.js/*.js','.tmp/**/*.js'],
+    src: ['tmp.js','PDF.js/*.js','.tmp/**/*.js'],
     dest: '.tmp/concat/angular-pdf.js'
   }
 };

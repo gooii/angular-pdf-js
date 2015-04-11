@@ -28,9 +28,15 @@ module.exports = function (grunt) {
         'clean:dist',
         'coffee',
         'concat',
-        'ngAnnotate'
+        'ngAnnotate',
+        'copy:worker'
     ]);
 
+    grunt.registerTask('local', function() {
+        grunt.task.run('build_lib');
+        grunt.task.run('watch');
+      }
+    );
     grunt.registerTask('build_lib',['build']);
 
     grunt.registerTask('default', [

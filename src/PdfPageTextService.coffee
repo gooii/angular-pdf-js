@@ -1,8 +1,8 @@
 class PdfPageTextService
 
-  @$inject: ['$log']
+  @$inject: ['$log', '$q']
 
-  constructor: (@log) ->
+  constructor: (@log, @$q) ->
     # extract text from pages
     @textContent = []
 
@@ -32,6 +32,9 @@ class PdfPageTextService
   # returns Promise
   extractPageText: (pdfPageProxy) =>
     @log.log('Extract page text %s',pdfPageProxy.pageNumber)
+
+    deferred = @$q.defer()
+
     pageIndex = ~~(pdfPageProxy.pageNumber - 1)
     if not @textContent[pageIndex]
       if @pendingText[pageIndex]
@@ -39,11 +42,15 @@ class PdfPageTextService
         @log.log('Already waiting for text from page %s, %O', pageIndex, @pendingText[pageIndex])
         return @pendingText[pageIndex]
       else
-        textPromise = @pages[pageIndex].getTextContent()
+        textPromise = pdfPageProxy.getTextContent()
+
         textPromise.then (textContent) =>
           @log.log('Extracted page text %s %O', pageIndex,textContent)
           @textContent[pageIndex] = textContent
           @pendingText[pageIndex] = null
+          # Count how many pages have been completed.
+          # Because text may not be extracted in order
+          # the @textContent array is scanned for non-null entries.
           completedText = 0
           _.each @textContent, (t) =>
             if t
@@ -53,11 +60,19 @@ class PdfPageTextService
             @textContentReady = true
           else
             @log.log('Completed %s of %s', completedText, @totalPages)
+
+
+          @log.log('Resolve deferred')
+
+          deferred.resolve({text:textContent, page:pdfPageProxy})
           return textContent
+
         , (error) =>
+          deferred.reject({error:'Text extraction error',page:pdfPageProxy})
           @log.warn('Text extraction error')
-        @pendingText[pageIndex] = textPromise
-        return textPromise
+        @pendingText[pageIndex] = deferred.promise
+
+    return deferred.promise
 
 app = angular.module 'angular-pdf-js'
 

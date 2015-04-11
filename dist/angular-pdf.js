@@ -1,4 +1,5 @@
-/* -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+// V3
+;/* -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set shiftwidth=2 tabstop=2 autoindent cindent expandtab: */
 /* Copyright 2012 Mozilla Foundation
  *
@@ -47839,6 +47840,10 @@ var Cache = function cacheCache(size) {
 };
 
 ;(function() {
+  angular.module('angular-pdf-js', []);
+
+}).call(this);
+;(function() {
   var PdfHtmlUI, app,
     __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
 
@@ -47848,14 +47853,72 @@ var Cache = function cacheCache(size) {
     function PdfHtmlUI(document, log) {
       this.document = document;
       this.log = log;
-      this.createContainer = __bind(this.createContainer, this);
+      this.scrollToPage = __bind(this.scrollToPage, this);
+      this.calculateInitialViewport = __bind(this.calculateInitialViewport, this);
+      this.createPageContainer = __bind(this.createPageContainer, this);
+      this.createViews = __bind(this.createViews, this);
+      this.getRenderConfigForPage = __bind(this.getRenderConfigForPage, this);
+      this.pdfError = __bind(this.pdfError, this);
+      this.createUI = __bind(this.createUI, this);
+      this.clear = __bind(this.clear, this);
       this.textLayerClass = 'textLayer';
       this.pageContainerClass = 'pageContainer';
       this.canvasClass = 'pdfPage';
+      this.currentZoom = 1;
+      this.containerElement = null;
+      this.pageContainers = [];
     }
 
-    PdfHtmlUI.prototype.createContainer = function(parent, page, viewport) {
-      var anchor, canvas, canvasWrapper, context, renderContext, textLayer;
+    PdfHtmlUI.prototype.clear = function() {
+      return this.pageContainers = [];
+    };
+
+    PdfHtmlUI.prototype.createUI = function() {
+      var pageProxy;
+      this.log.log('Create UI. Size : %s, %s', this.containerElement.width(), this.containerElement.height());
+      if (this.model.pdf.numPages > 0) {
+        pageProxy = this.model.getPdfPageProxyByNumber(1);
+        if (pageProxy.pageIndex) {
+          return createViews(pageProxy);
+        } else {
+          return pageProxy.then(this.createViews, this.pdfError);
+        }
+      }
+    };
+
+    PdfHtmlUI.prototype.pdfError = function(err) {
+      return this.log.error('PDF Error in HTML UI');
+    };
+
+    PdfHtmlUI.prototype.getRenderConfigForPage = function(pdfPage) {
+      var container;
+      this.log.log('Get render config for page %O', pdfPage);
+      container = this.pageContainers[pdfPage.pageNumber - 1];
+      if (!container) {
+        this.log.error('Container doesnt exist for page %s %O', pdfPage.pageNumber, this.pageContainers);
+        container = this.createViews(pdfPage);
+      }
+      container.viewport = pdfPage.getViewport(this.currentZoom);
+      return container;
+    };
+
+    PdfHtmlUI.prototype.createViews = function(pdfPageProxy) {
+      var container, pageIndex, viewport, _i, _ref;
+      this.log.log('Create Views %O %s, %s', pdfPageProxy, this.containerElement.width(), this.containerElement.height());
+      viewport = this.calculateInitialViewport(pdfPageProxy);
+      this.log.log('Initial viewport %O', viewport);
+      for (pageIndex = _i = 1, _ref = this.model.pdf.numPages; _i <= _ref; pageIndex = _i += 1) {
+        this.log.log('Creating page container %s', pageIndex);
+        container = this.createPageContainer(this.containerElement, this.model.getPageInfo(pageIndex), viewport);
+        this.pageContainers.push(container);
+      }
+      this.pageContainers[0].pdfPage = pdfPageProxy;
+      return container;
+    };
+
+    PdfHtmlUI.prototype.createPageContainer = function(parent, page, viewport) {
+      var anchor, canvas, canvasWrapper, textLayer;
+      this.log.log('Create page container %O %O %O', parent, page, viewport);
       anchor = angular.element('<a></a>');
       anchor.attr('name', 'page' + page.id);
       canvasWrapper = angular.element('<div></div>');
@@ -47873,18 +47936,46 @@ var Cache = function cacheCache(size) {
       canvasWrapper.append(textLayer);
       parent.append(anchor);
       parent.append(canvasWrapper);
-      context = canvas.getContext('2d');
-      renderContext = {
-        canvasContext: context
-      };
       return {
         wrapper: canvasWrapper,
         canvas: canvas,
-        renderContext: renderContext,
         page: page,
         anchor: anchor,
         textLayer: textLayer[0]
       };
+    };
+
+    PdfHtmlUI.prototype.calculateInitialViewport = function(page) {
+      var cw, viewport, vw;
+      this.log.log('Calculate initial viewport');
+      viewport = page.getViewport(1, 0);
+      this.log.log('Viewport %O', viewport);
+      return viewport;
+      vw = viewport.width;
+      cw = this.containerElement.width();
+      this.fitWidthScale = cw / vw;
+      this.fitHeightScale = (this.containerElement.height() - this.containerElement.offset().top) / viewport.height;
+      if (vw > cw) {
+        this.log.log('Using fit width scale');
+        this.currentZoom = this.fitWidthScale;
+      } else {
+        this.log.log('Using fit height scale');
+        this.currentZoom = this.fitHeightScale;
+      }
+      this.defaultZoom = this.currentZoom;
+      this.log.log('Canvas Container %s, %s. Viewport %O', this.containerElement.width(), this.containerElement.height(), viewport);
+      return page.getViewport(this.currentZoom);
+    };
+
+    PdfHtmlUI.prototype.scrollToPage = function(page) {
+      var config, containerOffset, currentTop, offset;
+      this.log.log('Scroll to page %O', page);
+      config = this.pageContainers[page.pageIndex];
+      this.log.log('Page config %O', config);
+      offset = config.anchor.offset();
+      currentTop = this.containerElement.scrollTop();
+      containerOffset = this.containerElement.offset().top;
+      return this.containerElement.scrollTop(offset.top + currentTop - containerOffset);
     };
 
     return PdfHtmlUI;
@@ -47960,13 +48051,12 @@ var Cache = function cacheCache(size) {
 
     cache = [];
 
-    PdfPageRenderService.$inject = ['$q', '$log', '$timeout', 'PublicationModel', 'PdfPageTextService'];
+    PdfPageRenderService.$inject = ['$q', '$log', '$timeout', 'PdfPageTextService'];
 
-    function PdfPageRenderService($q, log, $timeout, publicationModel, textService) {
+    function PdfPageRenderService($q, log, $timeout, textService) {
       this.$q = $q;
       this.log = log;
       this.$timeout = $timeout;
-      this.publicationModel = publicationModel;
       this.textService = textService;
       this.createViewport = __bind(this.createViewport, this);
       this.createDrawingContext = __bind(this.createDrawingContext, this);
@@ -47992,26 +48082,26 @@ var Cache = function cacheCache(size) {
       return this.thumbCache = {};
     };
 
-    PdfPageRenderService.prototype.renderPage = function(page, viewport, canvas, textLayerDiv) {
+    PdfPageRenderService.prototype.renderPage = function(page, renderConfig) {
       var deferred, pageIndex, renderContext, renderJob, t, te, textPromise;
       this.log.log('Rendering page %O', page);
       if (cache[page]) {
         this.log.info('Page exists in cache. Do something clever here');
       }
       renderContext = {
-        canvasContext: this.createDrawingContext(canvas, viewport),
-        viewport: viewport
+        canvasContext: this.createDrawingContext(renderConfig.canvas, renderConfig.viewport),
+        viewport: renderConfig.viewport
       };
       deferred = this.$q.defer();
       pageIndex = ~~(page.pageNumber - 1);
       renderJob = new RenderJob(page, renderContext, deferred);
-      renderJob.textDiv = textLayerDiv;
-      if (this.publicationModel.textContent[pageIndex]) {
+      renderJob.textDiv = renderConfig.textLayerDiv;
+      if (this.textService.textContent[pageIndex]) {
         this.log.log('Text content available for %s', pageIndex);
         return this.addToQueue(renderJob);
       } else {
         this.log.log('Waiting for text %s', pageIndex);
-        textPromise = this.publicationModel.extractPageText(page);
+        textPromise = this.textService.extractPageText(page);
         t = _.partial(this.textReady, renderJob);
         te = _.partial(this.textError, renderJob);
         textPromise.then(t, te);
@@ -48034,13 +48124,13 @@ var Cache = function cacheCache(size) {
         _this = this;
       this.log.log('Render %s at %s onto %O', number, size, canvas);
       deferred = this.$q.defer();
-      page = this.publicationModel.getPage(number);
+      page = this.model.getPageInfo(number);
       if (!page) {
         this.log.error('Page not found in model');
         deferred.reject();
         return deferred;
       }
-      pdfPage = this.publicationModel.getPageSource(page);
+      pdfPage = this.model.getPdfPageProxy(page);
       if (!pdfPage) {
         this.log.error('pdfPage doesnt exist %O', pdfPage);
         return;
@@ -48129,8 +48219,8 @@ var Cache = function cacheCache(size) {
       }
       this.log.log('DoRenderJob %s %O', job.page.pageIndex, job.context);
       if (job.textDiv) {
-        if (this.publicationModel.textContent[job.page.pageIndex]) {
-          textContent = this.publicationModel.textContent[job.page.pageIndex];
+        if (this.textService.textContent[job.page.pageIndex]) {
+          textContent = this.textService.textContent[job.page.pageIndex];
           tlbOptions = {
             textLayerDiv: job.textDiv,
             pageIndex: job.page.pageIndex,
@@ -48138,7 +48228,7 @@ var Cache = function cacheCache(size) {
           };
           this.log.log('TLB Options %O', tlbOptions);
           textLayer = new TextLayerBuilder(tlbOptions);
-          this.publicationModel.textLayers[job.page.pageIndex] = textLayer;
+          this.textService.textLayers[job.page.pageIndex] = textLayer;
           this.log.log('Text Layer %O. Text content %O', textLayer, textContent);
           textLayer.setTextContent(textContent);
           job.context.textLayer = textLayer;
@@ -48218,10 +48308,11 @@ var Cache = function cacheCache(size) {
     __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
 
   PdfPageTextService = (function() {
-    PdfPageTextService.$inject = ['$log'];
+    PdfPageTextService.$inject = ['$log', '$q'];
 
-    function PdfPageTextService(log) {
+    function PdfPageTextService(log, $q) {
       this.log = log;
+      this.$q = $q;
       this.extractPageText = __bind(this.extractPageText, this);
       this.updateMatches = __bind(this.updateMatches, this);
       this.textContent = [];
@@ -48252,16 +48343,17 @@ var Cache = function cacheCache(size) {
     };
 
     PdfPageTextService.prototype.extractPageText = function(pdfPageProxy) {
-      var pageIndex, textPromise,
+      var deferred, pageIndex, textPromise,
         _this = this;
       this.log.log('Extract page text %s', pdfPageProxy.pageNumber);
+      deferred = this.$q.defer();
       pageIndex = ~~(pdfPageProxy.pageNumber - 1);
       if (!this.textContent[pageIndex]) {
         if (this.pendingText[pageIndex]) {
           this.log.log('Already waiting for text from page %s, %O', pageIndex, this.pendingText[pageIndex]);
           return this.pendingText[pageIndex];
         } else {
-          textPromise = this.pages[pageIndex].getTextContent();
+          textPromise = pdfPageProxy.getTextContent();
           textPromise.then(function(textContent) {
             var completedText;
             _this.log.log('Extracted page text %s %O', pageIndex, textContent);
@@ -48279,14 +48371,23 @@ var Cache = function cacheCache(size) {
             } else {
               _this.log.log('Completed %s of %s', completedText, _this.totalPages);
             }
+            _this.log.log('Resolve deferred');
+            deferred.resolve({
+              text: textContent,
+              page: pdfPageProxy
+            });
             return textContent;
           }, function(error) {
+            deferred.reject({
+              error: 'Text extraction error',
+              page: pdfPageProxy
+            });
             return _this.log.warn('Text extraction error');
           });
-          this.pendingText[pageIndex] = textPromise;
-          return textPromise;
+          this.pendingText[pageIndex] = deferred.promise;
         }
       }
+      return deferred.promise;
     };
 
     return PdfPageTextService;
@@ -48303,14 +48404,16 @@ var Cache = function cacheCache(size) {
     __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
 
   PdfService = (function() {
-    PdfService.$inject = ['PdfPageRenderService', 'PdfPageTextService', '$log'];
+    PdfService.$inject = ['PdfPageRenderService', 'PdfPageTextService', 'PdfHtmlUI', '$log', '$q'];
 
-    function PdfService(renderService, textService, log) {
+    function PdfService(renderService, textService, htmlUI, log, $q) {
       this.renderService = renderService;
       this.textService = textService;
+      this.htmlUI = htmlUI;
       this.log = log;
+      this.$q = $q;
       this.updateMatches = __bind(this.updateMatches, this);
-      this.renderPage = __bind(this.renderPage, this);
+      this.renderWithText = __bind(this.renderWithText, this);
       this.render = __bind(this.render, this);
       this.destroy = __bind(this.destroy, this);
       this.getPdfPageProxyByNumber = __bind(this.getPdfPageProxyByNumber, this);
@@ -48318,8 +48421,10 @@ var Cache = function cacheCache(size) {
       this.getPdfPageProxy = __bind(this.getPdfPageProxy, this);
       this.getPageInfo = __bind(this.getPageInfo, this);
       this.pageLoadError = __bind(this.pageLoadError, this);
-      this.pageLoaded = __bind(this.pageLoaded, this);
       this.fetchPageFromPdf = __bind(this.fetchPageFromPdf, this);
+      this.pageLoadError = __bind(this.pageLoadError, this);
+      this.pageLoaded = __bind(this.pageLoaded, this);
+      this.showPage = __bind(this.showPage, this);
       this.createPageInfos = __bind(this.createPageInfos, this);
       this.pdfLoadError = __bind(this.pdfLoadError, this);
       this.pdfLoaded = __bind(this.pdfLoaded, this);
@@ -48327,11 +48432,13 @@ var Cache = function cacheCache(size) {
       this.hasPageInfos = __bind(this.hasPageInfos, this);
       this.hasPdf = __bind(this.hasPdf, this);
       this.clear = __bind(this.clear, this);
-      this.log.log('PDF Service');
+      this.log.log('PDF Service v3');
       this.pageInfos = [];
       this.pageProxies = [];
       this.totalPages = 0;
       this.allPagesReady = false;
+      this.htmlUI.model = this;
+      this.renderService.model = this;
     }
 
     PdfService.prototype.clear = function() {
@@ -48347,21 +48454,25 @@ var Cache = function cacheCache(size) {
     };
 
     PdfService.prototype.openPdf = function(url) {
-      var promise;
-      promise = PDFJS.getDocument(url);
-      promise.then(this.pdfLoaded, this.pdfLoadError);
-      return promise;
+      var pdfDocumentProxy;
+      this.loadPdfDeferred = this.$q.defer();
+      pdfDocumentProxy = PDFJS.getDocument(url);
+      pdfDocumentProxy.then(this.pdfLoaded, this.pdfLoadError);
+      return this.loadPdfDeferred.promise;
     };
 
     PdfService.prototype.pdfLoaded = function(pdf) {
+      this.log.log('Pdf Loaded %O', pdf);
       this.pdf = pdf;
       this.totalPages = pdf.numPages;
       this.textService.totalPages = this.totalPages;
-      return this.createPageInfos();
+      this.createPageInfos();
+      return this.loadPdfDeferred.resolve(this.pdf);
     };
 
     PdfService.prototype.pdfLoadError = function(error) {
-      return this.log.error('Pdf Load Error %O', error);
+      this.log.error('Pdf Load Error %O', error);
+      return this.loadPdfDeferred.reject(this.pdf);
     };
 
     PdfService.prototype.createPageInfos = function() {
@@ -48381,10 +48492,36 @@ var Cache = function cacheCache(size) {
       return _results;
     };
 
+    PdfService.prototype.showPage = function(pageNumber) {
+      this.log.log('Show Page %s', pageNumber);
+      if (this.pageInfos[pageNumber - 1].hasData) {
+        return this.log.log('Page already has data. Scroll into view?');
+      } else {
+        return this.fetchPageFromPdf(pageNumber);
+      }
+    };
+
+    PdfService.prototype.pageLoaded = function(page) {
+      this.log.log('Page Loaded %s %O', page.pageNumber, page);
+      this.pageInfos[page.pageNumber - 1].hasData = true;
+      this.pageProxies[page.pageNumber - 1] = page;
+      if (this.pageProxies.length === this.pageInfos.length) {
+        this.log.info('All pages ready');
+        this.allPagesReady = true;
+      }
+      return this.renderWithText(page);
+    };
+
+    PdfService.prototype.pageLoadError = function(err) {
+      return this.log.log('Page load error %O', err);
+    };
+
     PdfService.prototype.fetchPageFromPdf = function(pageNumber) {
       var promise;
       this.log.log('Fetch page from PDF %O number %s. numPages %s', this.pdf, pageNumber, this.totalPages);
-      if (pageNumber <= 0 || pageNumber > this.totalPages) {
+      if (this.pageProxies[pageNumber - 1]) {
+        return this.pageProxies[pageNumber - 1];
+      } else if (pageNumber <= 0 || pageNumber > this.totalPages) {
         return this.log.warn('Page out of bounds');
       } else if (!this.pageProxies[pageNumber - 1]) {
         this.log.log('Requesting PDF page');
@@ -48396,17 +48533,9 @@ var Cache = function cacheCache(size) {
       }
     };
 
-    PdfService.prototype.pageLoaded = function(page) {
-      this.pageInfos[page.pageNumber - 1].hasData = true;
-      this.pageProxies[page.pageNumber - 1] = page;
-      if (this.pageProxies.length === this.pageInfos.length) {
-        this.log.info('All pages ready');
-        this.allPagesReady = true;
-      }
-      return this.textService.extractPageText(page);
+    PdfService.prototype.pageLoadError = function() {
+      return this.log.error('Page load error');
     };
-
-    PdfService.prototype.pageLoadError = function() {};
 
     PdfService.prototype.getPageInfo = function(number) {
       this.log.log('Get page %s %O', number, this.pageInfos[number - 1]);
@@ -48429,12 +48558,13 @@ var Cache = function cacheCache(size) {
 
     PdfService.prototype.getPdfPageProxyByNumber = function(pageNumber) {
       var info, proxy;
-      info = getPageInfo(pageNumber);
-      proxy = getPdfPageProxy(info);
+      info = this.getPageInfo(pageNumber);
+      proxy = this.getPdfPageProxy(info);
       return proxy;
     };
 
     PdfService.prototype.destroy = function() {
+      this.log.log('Destroy');
       if (this.pdf) {
         return this.pdf.destroy();
       }
@@ -48444,8 +48574,11 @@ var Cache = function cacheCache(size) {
       return this.renderService.render(number, canvas, size);
     };
 
-    PdfService.prototype.renderPage = function(pdfPage, viewport, canvas, textDiv) {
-      return this.renderService.renderPage(pdfPage, viewport, canvas, textDiv);
+    PdfService.prototype.renderWithText = function(pdfPage) {
+      var renderConfig;
+      this.log.log('Render with text %s', pdfPage.pageNumber);
+      renderConfig = this.htmlUI.getRenderConfigForPage(pdfPage);
+      return this.renderService.renderPage(pdfPage, renderConfig);
     };
 
     PdfService.prototype.updateMatches = function(query, matches) {
@@ -48459,9 +48592,5 @@ var Cache = function cacheCache(size) {
   app = angular.module('angular-pdf-js');
 
   app.service('PdfService', PdfService);
-
-}).call(this);
-;(function() {
-  angular.module('angular-pdf-js', []);
 
 }).call(this);

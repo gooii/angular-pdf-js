@@ -10,6 +10,7 @@ ngToolkit:
     # Use our own ssh key here for github
     - ~/.ssh/id_rsa:/root/.ssh/id_rsa
     - ~/.ssh/known_hosts:/root/.ssh/known_hosts
+    - ~/.gitconfig:/root/.gitconfig
   volumes_from:
     - ngData
   privileged: true

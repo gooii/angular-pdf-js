@@ -1,0 +1,39 @@
+
+Page Render Service
+
+clear()
+
+# From thumb directive, to render without text
+# returns promise
+render(@page.id, @canvas, -1)
+
+# From main PDF viewer directive to render with text
+# returns promise
+renderPage(pdfPage, pdfPage.getViewport(@currentZoom), canvas, pageConfig.textLayer)
+
+PDF Model
+
+    Used by Page Render Service
+
+    properties :
+      textContent : Array
+      textLayers : Array
+    methods :
+      extractPageText(page <PdfPageProxy>) : returns Promise
+      getPage(number)       : returns PageInfo
+      getPdfPageProxy(pageInfo <PageInfo>)   : returns PdfPage
+
+
+    Used by PDF Print Service
+
+    properties :
+        allPagesReady : Bool
+        pages : Array
+
+    Used by Text Search Service
+
+    properties :
+        textContent : Array of ?
+    methods :
+        updateMatches(query <String> , matches <Array where each entry is a list of substring indices>) : Returns nothing
+) :

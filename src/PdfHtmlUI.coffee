@@ -18,7 +18,7 @@ class PdfHtmlUI
     @pageContainers = []
 
   createUI: () =>
-    @log.log('Create UI. Size : %s, %s', @containerElement.width(), @containerElement.height())
+    @log.log('UI: Create UI. Size : %s, %s', @containerElement.width(), @containerElement.height())
     if @model.pdf.numPages > 0
       pageProxy = @model.getPdfPageProxyByNumber(1)
       # If the page is ready it has a pageIndex, otherwise its a promise
@@ -28,37 +28,43 @@ class PdfHtmlUI
         pageProxy.then @createViews, @pdfError
 
   pdfError: (err) =>
-    @log.error('PDF Error in HTML UI')
+    @log.error('UI: PDF Error in HTML UI')
 
   getRenderConfigForPage: (pdfPage) =>
-    @log.log('Get render config for page %O',pdfPage)
-    container = @pageContainers[pdfPage.pageNumber - 1]
-    if not container
-      @log.error('Container doesnt exist for page %s %O',pdfPage.pageNumber, @pageContainers)
+    @log.log('UI: Get render config for page %O',pdfPage, pdfPage.pageNumber)
+    if @pageContainers.length == 0
+      @log.log('UI: No Containers creating views')
       container = @createViews(pdfPage)
+    else
+      container = @pageContainers[pdfPage.pageNumber - 1]
+
+    if not container
+      @log.error('Container not found for page', pdfPage.pageNumber)
+      throw "Container not found"
 
     container.viewport = pdfPage.getViewport(@currentZoom)
     return container
 
   createViews: (pdfPageProxy) =>
 
-    @log.log('Create Views %O %s, %s', pdfPageProxy, @containerElement.width(), @containerElement.height())
+    @log.log('UI: Create Views %O %s, %s', pdfPageProxy, @containerElement.width(), @containerElement.height())
 
     viewport = @calculateInitialViewport(pdfPageProxy)
 
-    @log.log('Initial viewport %O',viewport)
+    @log.log('UI: Initial viewport %O',viewport)
 
     for pageIndex in [1..@model.pdf.numPages] by 1
-      @log.log('Creating page container %s', pageIndex)
+      @log.log('UI: Creating page container %s', pageIndex)
       container = @createPageContainer(@containerElement, @model.getPageInfo(pageIndex), viewport)
-
       @pageContainers.push(container)
 
+    @log.log('UI: Created page containers', @pageContainers)
+
     @pageContainers[0].pdfPage = pdfPageProxy
-    return container
+    return @pageContainers[0]
 
   createPageContainer: (parent, page, viewport) =>
-    @log.log('Create page container %O %O %O',parent, page, viewport)
+    @log.log('UI: Create page container %O %O %O',parent, page, viewport)
     anchor = angular.element('<a></a>')
     anchor.attr('name', 'page' + page.id)
 
@@ -87,10 +93,10 @@ class PdfHtmlUI
 
   calculateInitialViewport: (page) =>
 
-    @log.log('Calculate initial viewport')
+    @log.log('UI: Calculate initial viewport')
 
     viewport = page.getViewport(1,0)
-    @log.log('Viewport %O',viewport)
+    @log.log('UI: Viewport %O',viewport)
 
     return viewport
 
@@ -102,23 +108,23 @@ class PdfHtmlUI
 
     # If viewport is wider than canvas then
     if vw > cw
-      @log.log('Using fit width scale')
+      @log.log('UI: Using fit width scale')
       @currentZoom = @fitWidthScale
     else
-      @log.log('Using fit height scale')
+      @log.log('UI: Using fit height scale')
       @currentZoom = @fitHeightScale
 
     @defaultZoom = @currentZoom
 
-    @log.log('Canvas Container %s, %s. Viewport %O',@containerElement.width(),@containerElement.height(), viewport)
+    @log.log('UI: Canvas Container %s, %s. Viewport %O',@containerElement.width(),@containerElement.height(), viewport)
     return page.getViewport(@currentZoom)
 
   scrollToPage: (page) =>
-    @log.log('Scroll to page %O', page)
+    @log.log('UI: Scroll to page %O', page)
     # scroll to named anchor
     config = @pageContainers[page.pageIndex]
 
-    @log.log 'Page config %O', config
+    @log.log 'UI: Page config %O', config
     offset = config.anchor.offset()
     currentTop = @containerElement.scrollTop()
     containerOffset = @containerElement.offset().top

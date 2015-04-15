@@ -98,22 +98,14 @@ class PdfHtmlUI
     viewport = page.getViewport(1,0)
     @log.log('UI: Viewport %O',viewport)
 
-    return viewport
-
     vw = viewport.width
-    cw = @containerElement.width()
+    # Leave some space either side
+    cw = @containerElement.width() - 32
+
+    @log.log('UI: VW %s CW %s',vw, cw)
 
     @fitWidthScale = cw / vw
-    @fitHeightScale = (@containerElement.height() - @containerElement.offset().top) / viewport.height
-
-    # If viewport is wider than canvas then
-    if vw > cw
-      @log.log('UI: Using fit width scale')
-      @currentZoom = @fitWidthScale
-    else
-      @log.log('UI: Using fit height scale')
-      @currentZoom = @fitHeightScale
-
+    @currentZoom = @fitWidthScale
     @defaultZoom = @currentZoom
 
     @log.log('UI: Canvas Container %s, %s. Viewport %O',@containerElement.width(),@containerElement.height(), viewport)

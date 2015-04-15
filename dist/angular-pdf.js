@@ -47956,18 +47956,11 @@ var Cache = function cacheCache(size) {
       this.log.log('UI: Calculate initial viewport');
       viewport = page.getViewport(1, 0);
       this.log.log('UI: Viewport %O', viewport);
-      return viewport;
       vw = viewport.width;
-      cw = this.containerElement.width();
+      cw = this.containerElement.width() - 32;
+      this.log.log('UI: VW %s CW %s', vw, cw);
       this.fitWidthScale = cw / vw;
-      this.fitHeightScale = (this.containerElement.height() - this.containerElement.offset().top) / viewport.height;
-      if (vw > cw) {
-        this.log.log('UI: Using fit width scale');
-        this.currentZoom = this.fitWidthScale;
-      } else {
-        this.log.log('UI: Using fit height scale');
-        this.currentZoom = this.fitHeightScale;
-      }
+      this.currentZoom = this.fitWidthScale;
       this.defaultZoom = this.currentZoom;
       this.log.log('UI: Canvas Container %s, %s. Viewport %O', this.containerElement.width(), this.containerElement.height(), viewport);
       return page.getViewport(this.currentZoom);

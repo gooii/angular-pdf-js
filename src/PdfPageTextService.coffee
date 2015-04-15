@@ -14,7 +14,7 @@ class PdfPageTextService
     @totalPages = 0
 
   updateMatches: (query, matches) =>
-    @log.log('Update matches %O %O', matches, @textLayers)
+    @log.log('TEXT: Update matches %O %O', matches, @textLayers)
     _.each @textLayers, (textLayer, index) =>
       findController = {
         active:true
@@ -31,7 +31,7 @@ class PdfPageTextService
   # Extract text from a PdfPageProxy
   # returns Promise
   extractPageText: (pdfPageProxy) =>
-    @log.log('Extract page text %s',pdfPageProxy.pageNumber)
+    @log.log('TEXT: Extract page text %s',pdfPageProxy.pageNumber)
 
     deferred = @$q.defer()
 
@@ -39,13 +39,13 @@ class PdfPageTextService
     if not @textContent[pageIndex]
       if @pendingText[pageIndex]
         # if we are already waiting for the text
-        @log.log('Already waiting for text from page %s, %O', pageIndex, @pendingText[pageIndex])
+        @log.log('TEXT: Already waiting for text from page %s, %O', pageIndex, @pendingText[pageIndex])
         return @pendingText[pageIndex]
       else
         textPromise = pdfPageProxy.getTextContent()
 
         textPromise.then (textContent) =>
-          @log.log('Extracted page text %s %O', pageIndex,textContent)
+          @log.log('TEXT: Extracted page text %s %O', pageIndex,textContent)
           @textContent[pageIndex] = textContent
           @pendingText[pageIndex] = null
           # Count how many pages have been completed.
@@ -56,13 +56,13 @@ class PdfPageTextService
             if t
               completedText++
           if completedText == @totalPages
-            @log.log('All text extracted')
+            @log.log('TEXT: All text extracted')
             @textContentReady = true
           else
-            @log.log('Completed %s of %s', completedText, @totalPages)
+            @log.log('TEXT: Completed %s of %s', completedText, @totalPages)
 
 
-          @log.log('Resolve deferred')
+          @log.log('TEXT: Resolve deferred')
 
           deferred.resolve({text:textContent, page:pdfPageProxy})
           return textContent

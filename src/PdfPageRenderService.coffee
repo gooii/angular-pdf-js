@@ -66,7 +66,7 @@ class PdfPageRenderService
   # @returns [RenderJob] a render job with a promise which is resolved when the page has been rendered
   renderPage: (page, renderConfig) =>
 
-    @log.log('Render: Rendering page %O', page)
+    @log.log('Render: Rendering page %O with config %O', page, renderConfig)
     # Check cache to see if page has been rendered
 
     if cache[page]
@@ -79,8 +79,8 @@ class PdfPageRenderService
 
     deferred = @$q.defer()
     pageIndex = ~~(page.pageNumber - 1)
-    renderJob = new RenderJob(page,renderContext, deferred)
-    renderJob.textDiv = renderConfig.textLayerDiv
+    renderJob = new RenderJob(page, renderContext, deferred)
+    renderJob.textDiv = renderConfig.textLayer
     if @textService.textContent[pageIndex]
       @log.log('Render: Text content available for %s', pageIndex)
       return @addToQueue(renderJob)
@@ -221,7 +221,7 @@ class PdfPageRenderService
     if not job and @queue.length > 0
       job = @queue.pop()
 
-    @log.log('Render: DoRenderJob %s %O', job.page.pageIndex, job.context)
+    @log.log('Render: DoRenderJob. Index %s Job %O', job.page.pageIndex, job)
     if job.textDiv
       if @textService.textContent[job.page.pageIndex]
         textContent = @textService.textContent[job.page.pageIndex]
@@ -234,6 +234,8 @@ class PdfPageRenderService
         job.context.textLayer = textLayer
       else
         @log.info 'Render: text content not available %s', job.page.pageIndex
+    else
+      @log.log('Render: Job has no text div target')
 
     @currentJob = job
     job.page.render(job.context).then @jobDone, @renderError

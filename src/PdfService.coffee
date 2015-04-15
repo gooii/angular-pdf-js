@@ -54,26 +54,14 @@ class PdfService
         hasData: false
       }
 
+  # Show a page by page number (1 based)
+  # return Promise which resolves when the page has loaded (but not rendered)
   showPage: (pageNumber) =>
     @log.log('SVC: Show Page %s',pageNumber)
     if @pageInfos[pageNumber - 1].hasData
       @log.log('SVC: Page already has data. Scroll into view?')
     else
       return @fetchPageFromPdf(pageNumber)
-
-  pageLoaded: (page) =>
-    @log.log('SVC: Page Loaded %s %O', page.pageNumber, page)
-
-    @pageInfos[page.pageNumber - 1].hasData = true
-    @pageProxies[page.pageNumber - 1] = page
-    if @pageProxies.length == @pageInfos.length
-      @log.info('SVC: All pages ready')
-      @allPagesReady = true
-
-    @renderWithText(page)
-
-  pageLoadError: (err) =>
-    @log.log('SVC: Page load error %O', err)
 
   fetchPageFromPdf: (pageNumber) =>
     @log.log('SVC: Fetch page from PDF %O number %s. numPages %s',@pdf, pageNumber, @totalPages)
@@ -88,6 +76,28 @@ class PdfService
       return promise
     else
       @log.log('SVC: Ignoring page request')
+
+  pageLoaded: (page) =>
+    @log.log('SVC: Page Loaded %s %O', page.pageNumber, page)
+
+    @pageInfos[page.pageNumber - 1].hasData = true
+    @pageProxies[page.pageNumber - 1] = page
+    if @pageProxies.length == @pageInfos.length
+      @log.info('SVC: All pages ready')
+      @allPagesReady = true
+
+    renderJob = @renderWithText(page)
+    @log.log('SVC: Render Job',renderJob)
+    renderJob.promise.then @pageRendered, @pageRenderError
+
+  pageRendered: (renderJob) =>
+    @log.log('SVC: Page Rendered',renderJob)
+
+  pageRenderError: (err) =>
+    @log.warn('SVC: Page Render Error',err)
+
+  pageLoadError: (err) =>
+    @log.log('SVC: Page load error %O', err)
 
   pageLoadError: () =>
     @log.error 'SVC: Page load error'

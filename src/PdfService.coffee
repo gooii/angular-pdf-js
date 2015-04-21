@@ -18,6 +18,8 @@ class PdfService
     @allPagesReady = false
 
     @renderService.clear()
+    @htmlUI.clear()
+    @textService.clear()
 
   hasPdf: () =>
     return @pdf != null
@@ -29,6 +31,7 @@ class PdfService
     @log.log('Open PDF',url)
     @clear()
     @loadPdfDeferred = @$q.defer()
+    @log.log('PDFJS getDocument')
     pdfDocumentProxy = PDFJS.getDocument(url)
     pdfDocumentProxy.then(@pdfLoaded, @pdfLoadError)
     return @loadPdfDeferred.promise

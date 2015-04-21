@@ -1,5 +1,4 @@
-// V3
-;/* -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set shiftwidth=2 tabstop=2 autoindent cindent expandtab: */
 /* Copyright 2012 Mozilla Foundation
  *
@@ -48722,6 +48721,7 @@ var Cache = function cacheCache(size) {
       this.pdfError = __bind(this.pdfError, this);
       this.createUI = __bind(this.createUI, this);
       this.clear = __bind(this.clear, this);
+      this.setContainer = __bind(this.setContainer, this);
       this.textLayerClass = 'textLayer';
       this.pageContainerClass = 'pageContainer';
       this.canvasClass = 'pdfPage';
@@ -48730,7 +48730,16 @@ var Cache = function cacheCache(size) {
       this.pageContainers = [];
     }
 
+    PdfHtmlUI.prototype.setContainer = function(containerElement) {
+      this.containerElement = containerElement;
+      return this.log.log('Set Container Element', this.containerElement);
+    };
+
     PdfHtmlUI.prototype.clear = function() {
+      this.currentZoom = 1;
+      if (this.containerElement) {
+        this.containerElement.empty();
+      }
       return this.pageContainers = [];
     };
 
@@ -49177,11 +49186,16 @@ var Cache = function cacheCache(size) {
       this.$q = $q;
       this.extractPageText = __bind(this.extractPageText, this);
       this.updateMatches = __bind(this.updateMatches, this);
+      this.clear = __bind(this.clear, this);
+      this.clear();
+    }
+
+    PdfPageTextService.prototype.clear = function() {
       this.textContent = [];
       this.textLayers = [];
       this.pendingText = [];
-      this.totalPages = 0;
-    }
+      return this.totalPages = 0;
+    };
 
     PdfPageTextService.prototype.updateMatches = function(query, matches) {
       var _this = this;
@@ -49308,7 +49322,9 @@ var Cache = function cacheCache(size) {
       this.pageProxies = [];
       this.totalPages = 0;
       this.allPagesReady = false;
-      return this.renderService.clear();
+      this.renderService.clear();
+      this.htmlUI.clear();
+      return this.textService.clear();
     };
 
     PdfService.prototype.hasPdf = function() {
@@ -49324,6 +49340,7 @@ var Cache = function cacheCache(size) {
       this.log.log('Open PDF', url);
       this.clear();
       this.loadPdfDeferred = this.$q.defer();
+      this.log.log('PDFJS getDocument');
       pdfDocumentProxy = PDFJS.getDocument(url);
       pdfDocumentProxy.then(this.pdfLoaded, this.pdfLoadError);
       return this.loadPdfDeferred.promise;

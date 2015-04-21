@@ -3,6 +3,9 @@ class PdfPageTextService
   @$inject: ['$log', '$q']
 
   constructor: (@log, @$q) ->
+    @clear()
+
+  clear: () =>
     # extract text from pages
     @textContent = []
 

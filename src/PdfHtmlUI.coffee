@@ -13,8 +13,14 @@ class PdfHtmlUI
 
     @pageContainers = []
 
+  setContainer: (@containerElement) =>
+    @log.log('Set Container Element',@containerElement)
+
   clear: () =>
     # TODO : Either clear the existing containers properly or re-use them
+    @currentZoom = 1
+    if @containerElement
+      @containerElement.empty()
     @pageContainers = []
 
   createUI: () =>

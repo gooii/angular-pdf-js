@@ -4,16 +4,19 @@ class PdfService
   constructor: ( @renderService,        @textService,        @htmlUI,  @log, @$q) ->
     @log.log('PDF Service v3')
 
+    @clear()
+
+    @htmlUI.model = @
+    @renderService.model = @
+
+  clear: () =>
+    @log.info('Clear PDF Service')
     @pageInfos = []
     @pageProxies = []
 
     @totalPages = 0
     @allPagesReady = false
 
-    @htmlUI.model = @
-    @renderService.model = @
-
-  clear: () =>
     @renderService.clear()
 
   hasPdf: () =>
@@ -23,6 +26,8 @@ class PdfService
     return @pageInfos != null && @pageInfos.length > 0
 
   openPdf: (url) =>
+    @log.log('Open PDF',url)
+    @clear()
     @loadPdfDeferred = @$q.defer()
     pdfDocumentProxy = PDFJS.getDocument(url)
     pdfDocumentProxy.then(@pdfLoaded, @pdfLoadError)

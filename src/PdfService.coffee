@@ -74,6 +74,8 @@ class PdfService
   # 0 based page indices for which pages are currently visible
   setVisibleLimits: (firstPage, lastPage) =>
     @log.log('SVC: Set visible limits',firstPage, lastPage)
+    if lastPage > @pageProxies.length - 1
+      lastPage = @pageProxies.length - 1
     for pageIndex in [firstPage..lastPage]
       @renderWithText(@pageProxies[pageIndex])
 

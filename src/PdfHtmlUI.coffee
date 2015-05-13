@@ -30,8 +30,10 @@ class PdfHtmlUI
     @watchScroll(@containerElement.parent().parent(), @scrollChanged)
 
   scrollChanged: (event) =>
-    scrollPosTop = @containerFirstItem.getBoundingClientRect().top - @scrollOffset
+    rect = @containerFirstItem.getBoundingClientRect()
+    scrollPosTop = rect.top - @scrollOffset
 
+    @log.log('Scroll',scrollPosTop, @pageHeight, @visibleHeight, rect)
     if @pageHeight
       topPage = -(scrollPosTop / @pageHeight)
       bottomPage = -((scrollPosTop - @visibleHeight) / @pageHeight)
@@ -100,7 +102,7 @@ class PdfHtmlUI
 
     if @pageContainers.length > 1
       @scrollOffset = @pageRect.top
-      @pageHeight = @pageContainers[1].canvas.getBoundingClientRect().top
+      @pageHeight = @pageContainers[1].canvas.getBoundingClientRect().top - @scrollOffset
       @log.log('Page Height',@pageHeight)
 
     return @pageContainers[0]

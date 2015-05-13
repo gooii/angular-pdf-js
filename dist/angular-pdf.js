@@ -48754,8 +48754,10 @@ var Cache = function cacheCache(size) {
     };
 
     PdfHtmlUI.prototype.scrollChanged = function(event) {
-      var bottomPage, bottomVisiblePage, scrollPosTop, topPage, topVisiblePage;
-      scrollPosTop = this.containerFirstItem.getBoundingClientRect().top - this.scrollOffset;
+      var bottomPage, bottomVisiblePage, rect, scrollPosTop, topPage, topVisiblePage;
+      rect = this.containerFirstItem.getBoundingClientRect();
+      scrollPosTop = rect.top - this.scrollOffset;
+      this.log.log('Scroll', scrollPosTop, this.pageHeight, this.visibleHeight, rect);
       if (this.pageHeight) {
         topPage = -(scrollPosTop / this.pageHeight);
         bottomPage = -((scrollPosTop - this.visibleHeight) / this.pageHeight);
@@ -48824,7 +48826,7 @@ var Cache = function cacheCache(size) {
       this.log.log('Page Rect', this.pageRect);
       if (this.pageContainers.length > 1) {
         this.scrollOffset = this.pageRect.top;
-        this.pageHeight = this.pageContainers[1].canvas.getBoundingClientRect().top;
+        this.pageHeight = this.pageContainers[1].canvas.getBoundingClientRect().top - this.scrollOffset;
         this.log.log('Page Height', this.pageHeight);
       }
       return this.pageContainers[0];
@@ -49025,7 +49027,11 @@ var Cache = function cacheCache(size) {
       if (this.cache[page.pageIndex]) {
         cachedPage = this.cache[page.pageIndex];
         this.log.info('Render: Page exists in cache.', cachedPage);
-        return cachedPage;
+        if (cachedPage.context.viewport.scale === renderConfig.viewport.scale) {
+          return cachedPage;
+        } else {
+          this.log.log('Cached page has different resolution');
+        }
       }
       renderContext = {
         canvasContext: this.createDrawingContext(renderConfig.canvas, renderConfig.viewport),
@@ -49465,6 +49471,9 @@ var Cache = function cacheCache(size) {
     PdfService.prototype.setVisibleLimits = function(firstPage, lastPage) {
       var pageIndex, _i, _results;
       this.log.log('SVC: Set visible limits', firstPage, lastPage);
+      if (lastPage > this.pageProxies.length - 1) {
+        lastPage = this.pageProxies.length - 1;
+      }
       _results = [];
       for (pageIndex = _i = firstPage; firstPage <= lastPage ? _i <= lastPage : _i >= lastPage; pageIndex = firstPage <= lastPage ? ++_i : --_i) {
         _results.push(this.renderWithText(this.pageProxies[pageIndex]));

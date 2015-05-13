@@ -6,16 +6,18 @@ class PdfService
 
     @clear()
 
-    @htmlUI.model = @
     @renderService.model = @
+    @htmlUI.setup(@, @renderService)
 
   clear: () =>
     @log.info('Clear PDF Service')
     @pageInfos = []
     @pageProxies = []
 
+    @currentPage = 0
     @totalPages = 0
     @allPagesReady = false
+    @renderOnLoad = false
 
     @renderService.clear()
     @htmlUI.clear()
@@ -62,14 +64,46 @@ class PdfService
         hasData: false
       }
 
-  # Show a page by page number (1 based)
-  # return Promise which resolves when the page has loaded (but not rendered)
   showPage: (pageNumber) =>
+    @log.log('SVC: Show Page',pageNumber)
+    if not @pageProxies[pageNumber - 1]
+      @log.warn('SVC: Page not loaded from PDF',pageNumber)
+    else
+      return @renderWithText(@pageProxies[pageNumber - 1]).promise
+
+  # 0 based page indices for which pages are currently visible
+  setVisibleLimits: (firstPage, lastPage) =>
+    @log.log('SVC: Set visible limits',firstPage, lastPage)
+    for pageIndex in [firstPage..lastPage]
+      @renderWithText(@pageProxies[pageIndex])
+
+  # Load a page by page number (1 based)
+  # return Promise which resolves when the page has loaded (but not rendered)
+  loadPage: (pageNumber) =>
     @log.log('SVC: Show Page %s',pageNumber)
     if @pageInfos[pageNumber - 1].hasData
       @log.log('SVC: Page already has data. Scroll into view?')
     else
       return @fetchPageFromPdf(pageNumber)
+
+  loadAllPages: () =>
+
+    @loadPromise = @$q.defer()
+    @log.log('SVC: Load All Pages',@allPagesReady)
+    if !@allPagesReady and @currentPage == 0
+      @loadNext()
+    else
+      @log.log('SVC: Not loading all pages, probably loading right now')
+
+    return @loadPromise.promise
+
+  loadNext: () =>
+    @log.log('SVC: Load Next',@currentPage, @allPagesReady)
+    @currentPage++
+    if !@allPagesReady
+      @loadPage(@currentPage).then @loadNext
+    else
+      @loadPromise.resolve()
 
   fetchPageFromPdf: (pageNumber) =>
     @log.log('SVC: Fetch page from PDF %O number %s. numPages %s',@pdf, pageNumber, @totalPages)
@@ -94,9 +128,12 @@ class PdfService
       @log.info('SVC: All pages ready')
       @allPagesReady = true
 
-    renderJob = @renderWithText(page)
-    @log.log('SVC: Render Job',renderJob)
-    renderJob.promise.then @pageRendered, @pageRenderError
+    if @renderOnLoad
+      renderJob = @renderWithText(page)
+      @log.log('SVC: Render Job',renderJob)
+      renderJob.promise.then @pageRendered, @pageRenderError
+    else
+      @log.log('Not rendering page on load : ',page.pageNumber - 1)
 
   pageRendered: (renderJob) =>
     @log.log('SVC: Page Rendered',renderJob)

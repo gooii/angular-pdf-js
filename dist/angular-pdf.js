@@ -48713,6 +48713,7 @@ var Cache = function cacheCache(size) {
     function PdfHtmlUI(document, log) {
       this.document = document;
       this.log = log;
+      this.watchScroll = __bind(this.watchScroll, this);
       this.scrollToPage = __bind(this.scrollToPage, this);
       this.calculateInitialViewport = __bind(this.calculateInitialViewport, this);
       this.createPageContainer = __bind(this.createPageContainer, this);
@@ -48721,18 +48722,48 @@ var Cache = function cacheCache(size) {
       this.pdfError = __bind(this.pdfError, this);
       this.createUI = __bind(this.createUI, this);
       this.clear = __bind(this.clear, this);
+      this.scrollChanged = __bind(this.scrollChanged, this);
       this.setContainer = __bind(this.setContainer, this);
+      this.setup = __bind(this.setup, this);
       this.textLayerClass = 'textLayer';
       this.pageContainerClass = 'pageContainer';
       this.canvasClass = 'pdfPage';
       this.currentZoom = 1;
       this.containerElement = null;
+      this.pageHeight = 0;
+      this.scrollOffset = 0;
       this.pageContainers = [];
     }
 
+    PdfHtmlUI.prototype.setup = function(model, renderService) {
+      this.model = model;
+      this.renderService = renderService;
+      return this.log.log('Setup HtmlUI');
+    };
+
     PdfHtmlUI.prototype.setContainer = function(containerElement) {
       this.containerElement = containerElement;
-      return this.log.log('Set Container Element', this.containerElement);
+      this.log.log('Set Container Element', this.containerElement);
+      if (this.containerElement.length > 0) {
+        this.containerFirstItem = this.containerElement[0];
+      } else {
+        this.log.error('Expected Jquery element');
+      }
+      this.visibleHeight = this.containerElement.parent().parent().height();
+      return this.watchScroll(this.containerElement.parent().parent(), this.scrollChanged);
+    };
+
+    PdfHtmlUI.prototype.scrollChanged = function(event) {
+      var bottomPage, bottomVisiblePage, scrollPosTop, topPage, topVisiblePage;
+      scrollPosTop = this.containerFirstItem.getBoundingClientRect().top - this.scrollOffset;
+      if (this.pageHeight) {
+        topPage = -(scrollPosTop / this.pageHeight);
+        bottomPage = -((scrollPosTop - this.visibleHeight) / this.pageHeight);
+        topVisiblePage = Math.floor(topPage);
+        bottomVisiblePage = Math.floor(bottomPage);
+        this.log.log('Page : ', topVisiblePage, bottomVisiblePage);
+        return this.model.setVisibleLimits(topVisiblePage, bottomVisiblePage);
+      }
     };
 
     PdfHtmlUI.prototype.clear = function() {
@@ -48789,6 +48820,13 @@ var Cache = function cacheCache(size) {
       }
       this.log.log('UI: Created page containers', this.pageContainers);
       this.pageContainers[0].pdfPage = pdfPageProxy;
+      this.pageRect = this.pageContainers[0].canvas.getBoundingClientRect();
+      this.log.log('Page Rect', this.pageRect);
+      if (this.pageContainers.length > 1) {
+        this.scrollOffset = this.pageRect.top;
+        this.pageHeight = this.pageContainers[1].canvas.getBoundingClientRect().top;
+        this.log.log('Page Height', this.pageHeight);
+      }
       return this.pageContainers[0];
     };
 
@@ -48845,6 +48883,36 @@ var Cache = function cacheCache(size) {
       currentTop = this.containerElement.scrollTop();
       containerOffset = this.containerElement.offset().top;
       return this.containerElement.scrollTop(offset.top + currentTop - containerOffset);
+    };
+
+    PdfHtmlUI.prototype.watchScroll = function(viewAreaElement, callback) {
+      var debounceScroll, rAF, state,
+        _this = this;
+      debounceScroll = function(evt) {
+        var rAF;
+        if (rAF) {
+          return;
+        }
+        return rAF = window.requestAnimationFrame(function() {
+          var currentY, lastY;
+          rAF = null;
+          currentY = viewAreaElement.scrollTop();
+          lastY = state.lastY;
+          if (currentY !== lastY) {
+            state.down = currentY > lastY;
+          }
+          state.lastY = currentY;
+          return callback(state);
+        });
+      };
+      state = {
+        down: true,
+        lastY: viewAreaElement.scrollTop(),
+        _eventHandler: debounceScroll
+      };
+      rAF = null;
+      viewAreaElement.on('scroll', debounceScroll);
+      return state;
     };
 
     return PdfHtmlUI;
@@ -48952,10 +49020,12 @@ var Cache = function cacheCache(size) {
     };
 
     PdfPageRenderService.prototype.renderPage = function(page, renderConfig) {
-      var deferred, pageIndex, renderContext, renderJob, t, te, textPromise;
+      var cachedPage, deferred, pageIndex, renderContext, renderJob, t, te, textPromise;
       this.log.log('Render: Rendering page %O with config %O', page, renderConfig);
-      if (cache[page]) {
-        this.log.info('Render: Page exists in cache. Do something clever here');
+      if (this.cache[page.pageIndex]) {
+        cachedPage = this.cache[page.pageIndex];
+        this.log.info('Render: Page exists in cache.', cachedPage);
+        return cachedPage;
       }
       renderContext = {
         canvasContext: this.createDrawingContext(renderConfig.canvas, renderConfig.viewport),
@@ -49302,6 +49372,10 @@ var Cache = function cacheCache(size) {
       this.pageRendered = __bind(this.pageRendered, this);
       this.pageLoaded = __bind(this.pageLoaded, this);
       this.fetchPageFromPdf = __bind(this.fetchPageFromPdf, this);
+      this.loadNext = __bind(this.loadNext, this);
+      this.loadAllPages = __bind(this.loadAllPages, this);
+      this.loadPage = __bind(this.loadPage, this);
+      this.setVisibleLimits = __bind(this.setVisibleLimits, this);
       this.showPage = __bind(this.showPage, this);
       this.createPageInfos = __bind(this.createPageInfos, this);
       this.pdfLoadError = __bind(this.pdfLoadError, this);
@@ -49312,16 +49386,18 @@ var Cache = function cacheCache(size) {
       this.clear = __bind(this.clear, this);
       this.log.log('PDF Service v3');
       this.clear();
-      this.htmlUI.model = this;
       this.renderService.model = this;
+      this.htmlUI.setup(this, this.renderService);
     }
 
     PdfService.prototype.clear = function() {
       this.log.info('Clear PDF Service');
       this.pageInfos = [];
       this.pageProxies = [];
+      this.currentPage = 0;
       this.totalPages = 0;
       this.allPagesReady = false;
+      this.renderOnLoad = false;
       this.renderService.clear();
       this.htmlUI.clear();
       return this.textService.clear();
@@ -49378,11 +49454,51 @@ var Cache = function cacheCache(size) {
     };
 
     PdfService.prototype.showPage = function(pageNumber) {
+      this.log.log('SVC: Show Page', pageNumber);
+      if (!this.pageProxies[pageNumber - 1]) {
+        return this.log.warn('SVC: Page not loaded from PDF', pageNumber);
+      } else {
+        return this.renderWithText(this.pageProxies[pageNumber - 1]).promise;
+      }
+    };
+
+    PdfService.prototype.setVisibleLimits = function(firstPage, lastPage) {
+      var pageIndex, _i, _results;
+      this.log.log('SVC: Set visible limits', firstPage, lastPage);
+      _results = [];
+      for (pageIndex = _i = firstPage; firstPage <= lastPage ? _i <= lastPage : _i >= lastPage; pageIndex = firstPage <= lastPage ? ++_i : --_i) {
+        _results.push(this.renderWithText(this.pageProxies[pageIndex]));
+      }
+      return _results;
+    };
+
+    PdfService.prototype.loadPage = function(pageNumber) {
       this.log.log('SVC: Show Page %s', pageNumber);
       if (this.pageInfos[pageNumber - 1].hasData) {
         return this.log.log('SVC: Page already has data. Scroll into view?');
       } else {
         return this.fetchPageFromPdf(pageNumber);
+      }
+    };
+
+    PdfService.prototype.loadAllPages = function() {
+      this.loadPromise = this.$q.defer();
+      this.log.log('SVC: Load All Pages', this.allPagesReady);
+      if (!this.allPagesReady && this.currentPage === 0) {
+        this.loadNext();
+      } else {
+        this.log.log('SVC: Not loading all pages, probably loading right now');
+      }
+      return this.loadPromise.promise;
+    };
+
+    PdfService.prototype.loadNext = function() {
+      this.log.log('SVC: Load Next', this.currentPage, this.allPagesReady);
+      this.currentPage++;
+      if (!this.allPagesReady) {
+        return this.loadPage(this.currentPage).then(this.loadNext);
+      } else {
+        return this.loadPromise.resolve();
       }
     };
 
@@ -49412,9 +49528,13 @@ var Cache = function cacheCache(size) {
         this.log.info('SVC: All pages ready');
         this.allPagesReady = true;
       }
-      renderJob = this.renderWithText(page);
-      this.log.log('SVC: Render Job', renderJob);
-      return renderJob.promise.then(this.pageRendered, this.pageRenderError);
+      if (this.renderOnLoad) {
+        renderJob = this.renderWithText(page);
+        this.log.log('SVC: Render Job', renderJob);
+        return renderJob.promise.then(this.pageRendered, this.pageRenderError);
+      } else {
+        return this.log.log('Not rendering page on load : ', page.pageNumber - 1);
+      }
     };
 
     PdfService.prototype.pageRendered = function(renderJob) {

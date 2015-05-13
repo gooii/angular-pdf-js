@@ -69,8 +69,14 @@ class PdfPageRenderService
     @log.log('Render: Rendering page %O with config %O', page, renderConfig)
     # Check cache to see if page has been rendered
 
-    if cache[page]
-      @log.info('Render: Page exists in cache. Do something clever here')
+    if @cache[page.pageIndex]
+      cachedPage = @cache[page.pageIndex]
+      @log.info('Render: Page exists in cache.', cachedPage)
+      # Checked cached render is the same resolution as the request
+      if cachedPage.context.viewport.scale == renderConfig.viewport.scale
+        return cachedPage
+      else
+        @log.log('Cached page has different resolution')
 
     renderContext = {
       canvasContext: @createDrawingContext(renderConfig.canvas, renderConfig.viewport)

@@ -11,10 +11,38 @@ class PdfHtmlUI
 
     @containerElement = null
 
+    @pageHeight = 0
+    @scrollOffset = 0
     @pageContainers = []
+
+  setup: (@model, @renderService) =>
+    @log.log('Setup HtmlUI')
 
   setContainer: (@containerElement) =>
     @log.log('Set Container Element',@containerElement)
+    if @containerElement.length > 0
+      @containerFirstItem = @containerElement[0]
+    else
+      @log.error('Expected Jquery element')
+
+    @visibleHeight = @containerElement.parent().parent().height()
+
+    @watchScroll(@containerElement.parent().parent(), @scrollChanged)
+
+  scrollChanged: (event) =>
+    scrollPosTop = @containerFirstItem.getBoundingClientRect().top - @scrollOffset
+
+    if @pageHeight
+      topPage = -(scrollPosTop / @pageHeight)
+      bottomPage = -((scrollPosTop - @visibleHeight) / @pageHeight)
+
+      topVisiblePage = Math.floor(topPage)
+      bottomVisiblePage = Math.floor(bottomPage)
+      @log.log('Page : ',topVisiblePage, bottomVisiblePage)
+
+      @model.setVisibleLimits(topVisiblePage, bottomVisiblePage)
+    # event has lastY and down (i.e. scroll direction) properties
+    # Work out which pages are currently visible
 
   clear: () =>
     # TODO : Either clear the existing containers properly or re-use them
@@ -67,6 +95,14 @@ class PdfHtmlUI
     @log.log('UI: Created page containers', @pageContainers)
 
     @pageContainers[0].pdfPage = pdfPageProxy
+    @pageRect = @pageContainers[0].canvas.getBoundingClientRect()
+    @log.log('Page Rect',@pageRect)
+
+    if @pageContainers.length > 1
+      @scrollOffset = @pageRect.top
+      @pageHeight = @pageContainers[1].canvas.getBoundingClientRect().top
+      @log.log('Page Height',@pageHeight)
+
     return @pageContainers[0]
 
   createPageContainer: (parent, page, viewport) =>
@@ -128,6 +164,38 @@ class PdfHtmlUI
     containerOffset = @containerElement.offset().top
     #      @log.log('Scroll To %s %s %s', offset.top, currentTop, containerOffset)
     @containerElement.scrollTop(offset.top + currentTop - containerOffset)
+
+  # Adapted from PDF.js source
+  # Helper function to start monitoring the scroll event and converting them into
+  # PDF.js friendly one: with scroll debounce and scroll direction.
+  watchScroll: (viewAreaElement, callback) =>
+#    @log.log('Watch Scroll',viewAreaElement)
+    debounceScroll = (evt) =>
+      if (rAF)
+        return
+
+      # schedule an invocation of scroll for next animation frame.
+      rAF = window.requestAnimationFrame () =>
+        rAF = null;
+
+        currentY = viewAreaElement.scrollTop();
+        lastY = state.lastY;
+        if currentY != lastY
+          state.down = currentY > lastY
+
+        state.lastY = currentY
+        callback(state)
+
+    state = {
+      down: true
+      lastY: viewAreaElement.scrollTop()
+      _eventHandler: debounceScroll
+    }
+
+    rAF = null
+    viewAreaElement.on('scroll', debounceScroll)
+    return state
+
 
 app = angular.module 'angular-pdf-js'
 app.service 'PdfHtmlUI', PdfHtmlUI

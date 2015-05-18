@@ -16,31 +16,31 @@ class PdfHtmlUI
     @pageContainers = []
 
   setup: (@model, @renderService) =>
-    @log.log('Setup HtmlUI')
+    @log.log('UI: Setup HtmlUI')
 
-  setContainer: (@containerElement) =>
-    @log.log('Set Container Element',@containerElement)
+  setContainer: (@containerElement, scrollElement) =>
+    @log.log('UI: Set Container Element',@containerElement)
     if @containerElement.length > 0
       @containerFirstItem = @containerElement[0]
     else
-      @log.error('Expected Jquery element')
+      @log.error('UI: Expected Jquery element')
 
     @visibleHeight = @containerElement.parent().parent().height()
 
-    @watchScroll(@containerElement.parent().parent(), @scrollChanged)
+    @watchScroll(scrollElement, @scrollChanged)
 
   scrollChanged: (event) =>
     rect = @containerFirstItem.getBoundingClientRect()
     scrollPosTop = rect.top - @scrollOffset
 
-    @log.log('Scroll',scrollPosTop, @pageHeight, @visibleHeight, rect)
+    @log.log('UI: Scroll',scrollPosTop, @pageHeight, @visibleHeight, rect)
     if @pageHeight
       topPage = -(scrollPosTop / @pageHeight)
       bottomPage = -((scrollPosTop - @visibleHeight) / @pageHeight)
 
       topVisiblePage = Math.floor(topPage)
       bottomVisiblePage = Math.floor(bottomPage)
-      @log.log('Page : ',topVisiblePage, bottomVisiblePage)
+      @log.log('UI: Page : ',topVisiblePage, bottomVisiblePage)
 
       @model.setVisibleLimits(topVisiblePage, bottomVisiblePage)
     # event has lastY and down (i.e. scroll direction) properties
@@ -75,7 +75,7 @@ class PdfHtmlUI
       container = @pageContainers[pdfPage.pageNumber - 1]
 
     if not container
-      @log.error('Container not found for page', pdfPage.pageNumber)
+      @log.error('UI: Container not found for page', pdfPage.pageNumber)
       throw "Container not found"
 
     container.viewport = pdfPage.getViewport(@currentZoom)
@@ -98,12 +98,12 @@ class PdfHtmlUI
 
     @pageContainers[0].pdfPage = pdfPageProxy
     @pageRect = @pageContainers[0].canvas.getBoundingClientRect()
-    @log.log('Page Rect',@pageRect)
+    @log.log('UI: Page Rect',@pageRect)
 
     if @pageContainers.length > 1
       @scrollOffset = @pageRect.top
       @pageHeight = @pageContainers[1].canvas.getBoundingClientRect().top - @scrollOffset
-      @log.log('Page Height',@pageHeight)
+      @log.log('UI: Page Height',@pageHeight)
 
     return @pageContainers[0]
 
@@ -133,7 +133,7 @@ class PdfHtmlUI
     parent.append(anchor)
     parent.append(canvasWrapper)
 
-    return {wrapper:canvasWrapper, canvas:canvas, page:page, anchor:anchor, textLayer:textLayer[0]}
+    return {wrapper:canvasWrapper, canvas:canvas, page:page, anchor:anchor, textLayer:textLayer[0], text:true}
 
   calculateInitialViewport: (page) =>
 
@@ -171,7 +171,7 @@ class PdfHtmlUI
   # Helper function to start monitoring the scroll event and converting them into
   # PDF.js friendly one: with scroll debounce and scroll direction.
   watchScroll: (viewAreaElement, callback) =>
-#    @log.log('Watch Scroll',viewAreaElement)
+    @log.log('UI: Watch Scroll',viewAreaElement)
     debounceScroll = (evt) =>
       if (rAF)
         return

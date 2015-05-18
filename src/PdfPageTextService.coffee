@@ -12,7 +12,7 @@ class PdfPageTextService
     # the TextLayerBuilder objects for each page, used to update matches when doing page based search
     @textLayers = []
 
-    @pendingText = []
+    @pendingText = {}
 
     @totalPages = 0
 
@@ -31,6 +31,12 @@ class PdfPageTextService
       textLayer.findController = findController
       textLayer.updateMatches()
 
+  # Has this page been queued for text extraction?
+  isWaitingFor: (pdfPageProxy) =>
+    pending = @pendingText[pdfPageProxy.pageIndex]
+    @log.log('TEXT: isWaitingFor',pending)
+    return pending != undefined
+
   # Extract text from a PdfPageProxy
   # returns Promise
   extractPageText: (pdfPageProxy) =>
@@ -38,7 +44,7 @@ class PdfPageTextService
 
     deferred = @$q.defer()
 
-    pageIndex = ~~(pdfPageProxy.pageNumber - 1)
+    pageIndex = pdfPageProxy.pageIndex
     if not @textContent[pageIndex]
       if @pendingText[pageIndex]
         # if we are already waiting for the text

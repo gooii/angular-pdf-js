@@ -45,9 +45,8 @@ class PdfPageRenderService
   # Pages queued for rendering
   queue = []
 
-  thumbCache = {}
-
   cache = []
+  cacheWithoutText = []
 
   @$inject: [   '$q', '$log', '$timeout', 'PdfPageTextService']
   constructor: (@$q,   @log,  @$timeout,  @textService) ->
@@ -60,23 +59,40 @@ class PdfPageRenderService
     @pendingPages = []
     @queue = []
     @cache = []
-    @thumbCache = {}
+    @cacheWithoutText = []
 
   # Request a single page to be rendered using the supplied viewport and canvas
   # @returns [RenderJob] a render job with a promise which is resolved when the page has been rendered
   renderPage: (page, renderConfig) =>
 
     @log.log('Render: Rendering page %O with config %O', page, renderConfig)
-    # Check cache to see if page has been rendered
 
-    if @cache[page.pageIndex]
-      cachedPage = @cache[page.pageIndex]
-      @log.info('Render: Page exists in cache.', cachedPage)
-      # Checked cached render is the same resolution as the request
-      if cachedPage.context.viewport.scale == renderConfig.viewport.scale
-        return cachedPage
-      else
-        @log.log('Cached page has different resolution')
+    cacheItem = @checkCache(page, renderConfig)
+
+    if cacheItem
+      return cacheItem
+
+    # Check if job is in the queue
+    if @queue.length > 0
+      _.each @queue, (job) =>
+        if (job.page == page) && (job.context.viewport.scale == renderConfig.viewport.scale)
+          @log.log('Matching job found in queue')
+          return job
+
+    # Check if job is currently being rendered
+    if @currentJob && (@currentJob.page == page) && (@currentJob.context.viewport.scale == renderConfig.viewport.scale)
+      @log.log('Current job matches request')
+      return @currentJob
+
+    if renderConfig.text
+      waitingForText = @textService.isWaitingFor(page)
+      @log.log('Render: Waiting for text',waitingForText)
+      if waitingForText
+        @log.log('Render: Waiting for text from page',page.pageIndex)
+        # TODO : keep separate queue of jobs that are scheduled for text extraction
+        # so we can return the job here. At the moment the job is only held within
+        # the context of the _.partial application below.
+        return null
 
     renderContext = {
       canvasContext: @createDrawingContext(renderConfig.canvas, renderConfig.viewport)
@@ -84,20 +100,39 @@ class PdfPageRenderService
     }
 
     deferred = @$q.defer()
-    pageIndex = ~~(page.pageNumber - 1)
     renderJob = new RenderJob(page, renderContext, deferred)
-    renderJob.textDiv = renderConfig.textLayer
-    if @textService.textContent[pageIndex]
-      @log.log('Render: Text content available for %s', pageIndex)
-      return @addToQueue(renderJob)
+
+    if renderConfig.text
+      renderJob.textDiv = renderConfig.textLayer
+
+      if @textService.textContent[page.pageIndex]
+        @log.log('Render: Text content available for %s', page.pageIndex)
+        return @addToQueue(renderJob)
+      else
+        @log.log('Render: Requesting text for %s', page.pageIndex)
+        textPromise = @textService.extractPageText(page)
+        t = _.partial(@textReady, renderJob)
+        te = _.partial(@textError, renderJob)
+        textPromise.then t, te
     else
-      @log.log('Render: Waiting for text %s', pageIndex)
-      textPromise = @textService.extractPageText(page)
-      t = _.partial(@textReady, renderJob)
-      te = _.partial(@textError, renderJob)
-      textPromise.then t, te
+      @addToQueue(renderJob)
 
     return renderJob
+
+  checkCache: (page, renderConfig) =>
+    # At the moment there are 2 caches, one for pages with text layers
+    # and one for pages without (i.e. thumbnails)
+    cache = if renderConfig.text then @cache else @cacheWithoutText
+
+    @log.log('Render: Checking cache',cache)
+    if cache[page.pageIndex]
+      cachedPage = cache[page.pageIndex]
+      @log.info('Render: Page exists in cache.', cachedPage)
+      # Checked cached render is the same resolution as the request
+      if cachedPage.context.viewport.scale == renderConfig.viewport.scale
+        return cachedPage
+      else
+        @log.log('Cached page has different resolution')
 
   textError: (renderJob, textContent) =>
     @log.error('Render: Text error %O %O', renderJob, textContent)
@@ -106,95 +141,6 @@ class PdfPageRenderService
   textReady: (renderJob, textContent) =>
     @log.log('Render: Text ready %O %O', renderJob, textContent)
     @addToQueue(renderJob)
-
-  # Render a page based on its number (1 based) without a text layer.
-  # Example call used by thumbnail directive
-  # @pageRenderService.render(@page.id, @canvas, -1)
-  # returns a promise
-  render: (number, canvas, size) =>
-    @log.log('Render: Render %s at %s onto %O', number,size,canvas)
-
-    deferred = @$q.defer()
-
-    # Get the page info model
-    page = @model.getPageInfo(number)
-    if not page
-      @log.error('Render: Page not found in model')
-      deferred.reject()
-      return deferred
-
-    # get the PDFPageProxy
-    pdfPage = @model.getPdfPageProxy(page)
-
-    if not pdfPage
-      @log.error('Render: pdfPage doesnt exist %O', pdfPage)
-      return
-    else
-      @log.log('Render: Page source %O. Page info %O', pdfPage, page)
-
-    if page.hasData
-      if @thumbCache[pdfPage.pageIndex]
-        canvas.getContext('2d').putImageData(@thumbCache[pdfPage.pageIndex],0,0)
-        deferred.resolve()
-        return deferred
-
-      # pdfPage is the actual PDFPageProxy
-      @log.log('Render: Page has data, ready to render %s',number)
-
-      # Check if any pending pages match
-      pending = _.find @pendingPages, (item) =>
-        @log.log('Render: Checking pending %O %O',item, pdfPage)
-        return item.page.number == (pdfPage.pageIndex + 1)
-
-      if pending
-        @log.log('Render: Pending page matches %s', number)
-        @pageReadyToRender(pdfPage)
-
-      viewport = @createViewport(pdfPage, size, canvas)
-      requested = @renderPage(pdfPage, viewport, canvas)
-
-      return requested
-    else
-      # pdfPage is a promise
-      @log.log('Render: Page doesnt have data, requesting data before rendering %s %O',number, pdfPage)
-      @pendingPages.push(new PendingPage(page,deferred, size, canvas))
-      tmp = @pendingPages.slice()
-      @log.log('Render: Pending pages %O', tmp)
-      pdfPage.then(@pageReadyToRender, @fetchPageError)
-      return deferred
-
-  pageReadyToRender: (pdfPageProxy) =>
-    if not pdfPageProxy
-      @log.error('Render: Page ready but proxy is missing')
-      return
-
-    @log.log('Render: Page ready to render %O %s', pdfPageProxy, pdfPageProxy.pageIndex)
-    pending = _.find @pendingPages, (item) =>
-      @log.log('Render: Checking pending %O %O',item, pdfPageProxy)
-      return item.page.number == (pdfPageProxy.pageIndex + 1)
-
-    if pending
-      @pendingPages.splice(@pendingPages.indexOf(pending),1)
-
-      @log.log('Render: Found pending %O', pending)
-      # Now check if we've actually rendered the page in the meantime so we dont render it again
-
-      viewport = @createViewport(pdfPageProxy, pending.size, pending.canvas)
-      renderContext = {
-        canvasContext: @createDrawingContext(pending.canvas, viewport),
-        viewport: viewport
-      }
-
-      @log.log('Render: Pending pages now %O', @pendingPages)
-
-      renderJob = new RenderJob(pdfPageProxy,renderContext,pending.deferred)
-      @addToQueue(renderJob)
-      return renderJob
-    else
-      @log.warn('Render: Page is ready but not pending %O %s', pdfPageProxy, pdfPageProxy.pageIndex)
-
-  @fetchPageError: (res) =>
-    @log.log('Render: Page render error')
 
   # Add a render job to the queue and return it
   #
@@ -206,7 +152,11 @@ class PdfPageRenderService
       # Render now
       @doRenderJob(renderJob)
     else
-      @queue.push(renderJob)
+      # Prioritise renders with text layers
+      if renderJob.textDiv
+        @queue.unshift(renderJob)
+      else
+        @queue.push(renderJob)
 
     return renderJob
 
@@ -225,7 +175,7 @@ class PdfPageRenderService
 
     @busy = true
     if not job and @queue.length > 0
-      job = @queue.pop()
+      job = @queue.shift()
 
     @log.log('Render: DoRenderJob. Index %s Job %O', job.page.pageIndex, job)
     if job.textDiv
@@ -253,13 +203,17 @@ class PdfPageRenderService
     if not @currentJob.textDiv
       ctx = @currentJob.context.canvasContext
       @log.log('Render: Save thumb to cache %s %O', @currentJob.page.pageIndex, ctx)
-      @thumbCache[@currentJob.page.pageIndex] = ctx.getImageData(0,0,ctx.canvas.width,ctx.canvas.height)
-    @cache[@currentJob.page.pageIndex] = @currentJob
+      # Store the actual image data in the cache
+      @currentJob.imageData = ctx.getImageData(0,0,ctx.canvas.width,ctx.canvas.height)
+      @cacheWithoutText[@currentJob.page.pageIndex] = @currentJob
+    else
+      @cache[@currentJob.page.pageIndex] = @currentJob
+
     @currentJob.deferred.resolve(@currentJob)
     @busy = false
     if @queue.length > 0
       @log.log('Render: Queue is not empty : %s', @queue.length)
-      @$timeout @doRenderJob, 50
+      @$timeout @doRenderJob, 10
 
     return @currentJob
 

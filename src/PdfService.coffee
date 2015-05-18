@@ -69,7 +69,11 @@ class PdfService
     if not @pageProxies[pageNumber - 1]
       @log.warn('SVC: Page not loaded from PDF',pageNumber)
     else
-      return @renderWithText(@pageProxies[pageNumber - 1]).promise
+      deferred = @renderWithText(@pageProxies[pageNumber - 1])
+      if deferred
+        return deferred.promise
+      else
+        @log.log('SVC: renderWithText didnt return a promise', deferred)
 
   # 0 based page indices for which pages are currently visible
   setVisibleLimits: (firstPage, lastPage) =>
@@ -176,8 +180,16 @@ class PdfService
     if @pdf
       @pdf.destroy()
 
+  # Render a page onto a canvas with the given size
+  # If size is -1 then the page will be rendered to fit the canvas
   render: (number, canvas, size) =>
-    return @renderService.render(number, canvas, size)
+    @log.log('SVC: Render',number,canvas,size)
+    pdfPage = @pageProxies[number - 1]
+    if pdfPage
+      renderConfig = {canvas:canvas,page:pdfPage,viewport:@renderService.createViewport(pdfPage, size, canvas),text:false}
+      return @renderService.renderPage(pdfPage, renderConfig)
+    else
+      @log.warn('SVC: Cant render without page proxy',number)
 
   renderWithText: (pdfPage) =>
     @log.log('SVC: Render with text %s',pdfPage.pageNumber)

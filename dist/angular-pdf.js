@@ -49008,6 +49008,7 @@ var Cache = function cacheCache(size) {
       this.createViewport = __bind(this.createViewport, this);
       this.createDrawingContext = __bind(this.createDrawingContext, this);
       this.cancelJob = __bind(this.cancelJob, this);
+      this.finishJob = __bind(this.finishJob, this);
       this.renderError = __bind(this.renderError, this);
       this.jobDone = __bind(this.jobDone, this);
       this.doRenderJob = __bind(this.doRenderJob, this);
@@ -49120,7 +49121,7 @@ var Cache = function cacheCache(size) {
     };
 
     PdfPageRenderService.prototype.doRenderJob = function(job) {
-      var textContent, textLayer, tlbOptions;
+      var pageIndex, textContent, textLayer, tlbOptions;
       if (this.busy) {
         this.log.warn('Render: Renderer is busy');
         return;
@@ -49129,30 +49130,31 @@ var Cache = function cacheCache(size) {
       if (!job && this.queue.length > 0) {
         job = this.queue.shift();
       }
-      this.log.log('Render: DoRenderJob. Index %s Job %O', job.page.pageIndex, job);
-      if (job.textDiv) {
-        if (this.textService.textContent[job.page.pageIndex]) {
-          textContent = this.textService.textContent[job.page.pageIndex];
+      this.currentJob = job;
+      pageIndex = this.currentJob.page.pageIndex;
+      this.log.log('Render: DoRenderJob. Index %s Job %O', pageIndex, this.currentJob);
+      if (this.currentJob.textDiv) {
+        if (this.textService.textContent[pageIndex]) {
+          textContent = this.textService.textContent[pageIndex];
           tlbOptions = {
-            textLayerDiv: job.textDiv,
-            pageIndex: job.page.pageIndex,
-            viewport: job.context.viewport
+            textLayerDiv: this.currentJob.textDiv,
+            pageIndex: pageIndex,
+            viewport: this.currentJob.context.viewport
           };
           this.log.log('Render: TLB Options %O', tlbOptions);
           textLayer = new TextLayerBuilder(tlbOptions);
-          this.textService.textLayers[job.page.pageIndex] = textLayer;
+          this.textService.textLayers[pageIndex] = textLayer;
           this.log.log('Render: Text Layer %O. Text content %O', textLayer, textContent);
           textLayer.setTextContent(textContent);
-          job.context.textLayer = textLayer;
+          this.currentJob.context.textLayer = textLayer;
         } else {
-          this.log.info('Render: text content not available %s', job.page.pageIndex);
+          this.log.info('Render: text content not available %s', pageIndex);
         }
       } else {
         this.log.log('Render: Job has no text div target');
       }
-      this.currentJob = job;
-      job.page.render(job.context).then(this.jobDone, this.renderError);
-      return job;
+      this.currentJob.page.render(this.currentJob.context).then(this.jobDone, this.renderError);
+      return this.currentJob;
     };
 
     PdfPageRenderService.prototype.jobDone = function(res) {
@@ -49167,16 +49169,25 @@ var Cache = function cacheCache(size) {
         this.cache[this.currentJob.page.pageIndex] = this.currentJob;
       }
       this.currentJob.deferred.resolve(this.currentJob);
+      return this.finishJob();
+    };
+
+    PdfPageRenderService.prototype.renderError = function(err) {
+      this.log.error('Render: Render error %s', err);
+      this.currentJob.deferred.reject(this.currentJob);
+      return this.finishJob();
+    };
+
+    PdfPageRenderService.prototype.finishJob = function() {
+      var completed;
       this.busy = false;
       if (this.queue.length > 0) {
         this.log.log('Render: Queue is not empty : %s', this.queue.length);
         this.$timeout(this.doRenderJob, 10);
       }
-      return this.currentJob;
-    };
-
-    PdfPageRenderService.prototype.renderError = function(err) {
-      return this.log.error('Render: Render error %s', err);
+      completed = this.currentJob;
+      this.currentJob = null;
+      return completed;
     };
 
     PdfPageRenderService.prototype.cancelJob = function(job) {

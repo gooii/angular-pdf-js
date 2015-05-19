@@ -177,25 +177,27 @@ class PdfPageRenderService
     if not job and @queue.length > 0
       job = @queue.shift()
 
-    @log.log('Render: DoRenderJob. Index %s Job %O', job.page.pageIndex, job)
-    if job.textDiv
-      if @textService.textContent[job.page.pageIndex]
-        textContent = @textService.textContent[job.page.pageIndex]
-        tlbOptions = {textLayerDiv:job.textDiv, pageIndex:job.page.pageIndex, viewport:job.context.viewport}
+    @currentJob = job
+    pageIndex = @currentJob.page.pageIndex
+
+    @log.log('Render: DoRenderJob. Index %s Job %O', pageIndex, @currentJob)
+    if @currentJob.textDiv
+      if @textService.textContent[pageIndex]
+        textContent = @textService.textContent[pageIndex]
+        tlbOptions = {textLayerDiv:@currentJob.textDiv, pageIndex:pageIndex, viewport:@currentJob.context.viewport}
         @log.log('Render: TLB Options %O', tlbOptions)
         textLayer = new TextLayerBuilder(tlbOptions);
-        @textService.textLayers[job.page.pageIndex] = textLayer
+        @textService.textLayers[pageIndex] = textLayer
         @log.log('Render: Text Layer %O. Text content %O', textLayer, textContent)
         textLayer.setTextContent(textContent)
-        job.context.textLayer = textLayer
+        @currentJob.context.textLayer = textLayer
       else
-        @log.info 'Render: text content not available %s', job.page.pageIndex
+        @log.info 'Render: text content not available %s', pageIndex
     else
       @log.log('Render: Job has no text div target')
 
-    @currentJob = job
-    job.page.render(job.context).then @jobDone, @renderError
-    return job
+    @currentJob.page.render(@currentJob.context).then @jobDone, @renderError
+    return @currentJob
 
   jobDone: (res) =>
     @log.log('Render: Job Done %s %O', @currentJob.page.pageIndex, @currentJob)
@@ -210,15 +212,23 @@ class PdfPageRenderService
       @cache[@currentJob.page.pageIndex] = @currentJob
 
     @currentJob.deferred.resolve(@currentJob)
+
+    @finishJob()
+
+  renderError: (err) =>
+    @log.error('Render: Render error %s', err)
+    @currentJob.deferred.reject(@currentJob)
+    @finishJob()
+
+  finishJob: () =>
     @busy = false
     if @queue.length > 0
       @log.log('Render: Queue is not empty : %s', @queue.length)
       @$timeout @doRenderJob, 10
 
-    return @currentJob
-
-  renderError: (err) =>
-    @log.error('Render: Render error %s', err)
+    completed = @currentJob
+    @currentJob = null
+    return completed
 
   cancelJob: (job) =>
     @log.log('Render: Cancel job',job)

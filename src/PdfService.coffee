@@ -213,5 +213,9 @@ class PdfService
   textExtracted: () =>
     @log.log('SVC: All text extracted')
 
+  find: (text) =>
+    @log.log('SVC: Find',text)
+    return @textService.find(text)
+
 app = angular.module 'angular-pdf-js'
 app.service 'PdfService', PdfService

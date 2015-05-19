@@ -49273,15 +49273,35 @@ var Cache = function cacheCache(size) {
     __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
 
   PdfPageTextService = (function() {
+    PdfPageTextService.prototype.charactersToNormalize = {
+      '\u2018': '\'',
+      '\u2019': '\'',
+      '\u201A': '\'',
+      '\u201B': '\'',
+      '\u201C': '"',
+      '\u201D': '"',
+      '\u201E': '"',
+      '\u201F': '"',
+      '\u00BC': '1/4',
+      '\u00BD': '1/2',
+      '\u00BE': '3/4'
+    };
+
     PdfPageTextService.$inject = ['$log', '$q'];
 
     function PdfPageTextService(log, $q) {
+      var replace;
       this.log = log;
       this.$q = $q;
+      this.doSearch = __bind(this.doSearch, this);
+      this.find = __bind(this.find, this);
       this.extractPageText = __bind(this.extractPageText, this);
       this.isWaitingFor = __bind(this.isWaitingFor, this);
       this.updateMatches = __bind(this.updateMatches, this);
+      this.normalize = __bind(this.normalize, this);
       this.clear = __bind(this.clear, this);
+      replace = Object.keys(this.charactersToNormalize).join('');
+      this.normalizationRegex = new RegExp('[' + replace + ']', 'g');
       this.clear();
     }
 
@@ -49290,7 +49310,15 @@ var Cache = function cacheCache(size) {
       this.textContent = [];
       this.textLayers = [];
       this.pendingText = {};
+      this.pageContents = [];
       return this.totalPages = 0;
+    };
+
+    PdfPageTextService.prototype.normalize = function(text) {
+      var _this = this;
+      return text.replace(this.normalizationRegex, function(ch) {
+        return _this.charactersToNormalize[ch];
+      });
     };
 
     PdfPageTextService.prototype.updateMatches = function(query, matches) {
@@ -49331,9 +49359,20 @@ var Cache = function cacheCache(size) {
         } else {
           textPromise = pdfPageProxy.getTextContent();
           textPromise.then(function(textContent) {
-            var completedText;
+            var completedText, item, strings;
             _this.log.log('TEXT: Extracted page text %s %O', pageIndex, textContent);
             _this.textContent[pageIndex] = textContent;
+            strings = (function() {
+              var _i, _len, _ref, _results;
+              _ref = textContent.items;
+              _results = [];
+              for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+                item = _ref[_i];
+                _results.push(item.str);
+              }
+              return _results;
+            })();
+            _this.pageContents[pageIndex] = _this.normalize(strings.join('').toLowerCase());
             completedText = 0;
             _.each(_this.textContent, function(t) {
               if (t) {
@@ -49357,11 +49396,66 @@ var Cache = function cacheCache(size) {
               error: 'Text extraction error',
               page: pdfPageProxy
             });
-            return _this.log.warn('Text extraction error');
+            return _this.log.warn('TEXT: Text extraction error');
           });
           this.pendingText[pageIndex] = deferred.promise;
         }
       }
+      return deferred.promise;
+    };
+
+    PdfPageTextService.prototype.find = function(query) {
+      var searchDeferred;
+      this.log.log('TEXT: Search PDF Text %s', query);
+      searchDeferred = this.$q.defer();
+      this.doSearch(query, searchDeferred);
+      return searchDeferred.promise;
+    };
+
+    PdfPageTextService.prototype.doSearch = function(query, deferred) {
+      var matches, queryLen, results,
+        _this = this;
+      this.log.log('TEXT: Do Search', query, this.pageContents);
+      matches = [];
+      results = [];
+      query = this.normalize(query.toLowerCase());
+      queryLen = query.length;
+      if (queryLen === 0) {
+        deferred.resolve({
+          matches: matches,
+          results: results
+        });
+        return deferred.promise;
+      }
+      _.map(this.pageContents, function(contents, index) {
+        var lastSpaceIndex, matchIdx, _results;
+        matches[index] = [];
+        matchIdx = -queryLen;
+        _results = [];
+        while (true) {
+          matchIdx = contents.indexOf(query, matchIdx + queryLen);
+          if (matchIdx === -1) {
+            break;
+          } else {
+            _this.log.log('TEXT: Match index %s', matchIdx);
+            matches[index].push(matchIdx);
+            lastSpaceIndex = contents.substring(0, matchIdx).lastIndexOf(" ");
+            results.push({
+              id: index,
+              number: index + 1,
+              text: contents.substr(lastSpaceIndex, 200)
+            });
+            _results.push(_this.log.log('TEXT: Match list %O', matches[index]));
+          }
+        }
+        return _results;
+      });
+      this.log.log('TEXT: Found matches %O', matches);
+      this.log.log('TEXT: Results %O', this.results);
+      deferred.resolve({
+        matches: matches,
+        results: results
+      });
       return deferred.promise;
     };
 
@@ -49387,6 +49481,7 @@ var Cache = function cacheCache(size) {
       this.htmlUI = htmlUI;
       this.log = log;
       this.$q = $q;
+      this.find = __bind(this.find, this);
       this.textExtracted = __bind(this.textExtracted, this);
       this.loadAllText = __bind(this.loadAllText, this);
       this.updateMatches = __bind(this.updateMatches, this);
@@ -49675,6 +49770,11 @@ var Cache = function cacheCache(size) {
 
     PdfService.prototype.textExtracted = function() {
       return this.log.log('SVC: All text extracted');
+    };
+
+    PdfService.prototype.find = function(text) {
+      this.log.log('SVC: Find', text);
+      return this.textService.find(text);
     };
 
     return PdfService;

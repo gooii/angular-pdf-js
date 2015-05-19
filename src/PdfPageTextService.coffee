@@ -1,8 +1,24 @@
 class PdfPageTextService
 
+  charactersToNormalize: {
+    '\u2018': '\'', # Left single quotation mark
+    '\u2019': '\'', # Right single quotation mark
+    '\u201A': '\'', # Single low-9 quotation mark
+    '\u201B': '\'', # Single high-reversed-9 quotation mark
+    '\u201C': '"',  # Left double quotation mark
+    '\u201D': '"',  # Right double quotation mark
+    '\u201E': '"',  # Double low-9 quotation mark
+    '\u201F': '"',  # Double high-reversed-9 quotation mark
+    '\u00BC': '1/4',# Vulgar fraction one quarter
+    '\u00BD': '1/2',# Vulgar fraction one half
+    '\u00BE': '3/4' # Vulgar fraction three quarters
+  }
+
   @$inject: ['$log', '$q']
 
   constructor: (@log, @$q) ->
+    replace = Object.keys(this.charactersToNormalize).join('')
+    @normalizationRegex = new RegExp('[' + replace + ']', 'g')
     @clear()
 
   clear: () =>
@@ -17,7 +33,13 @@ class PdfPageTextService
 
     @pendingText = {}
 
+    @pageContents = []
+
     @totalPages = 0
+
+  normalize: (text) =>
+    return text.replace @normalizationRegex, (ch) =>
+      return @charactersToNormalize[ch]
 
   updateMatches: (query, matches) =>
     @log.log('TEXT: Update matches %O %O', matches, @textLayers)
@@ -57,6 +79,9 @@ class PdfPageTextService
         textPromise.then (textContent) =>
           @log.log('TEXT: Extracted page text %s %O', pageIndex,textContent)
           @textContent[pageIndex] = textContent
+          strings = (item.str for item in textContent.items)
+          @pageContents[pageIndex] = @normalize(strings.join('').toLowerCase())
+
           #@pendingText[pageIndex] = null
           # Count how many pages have been completed.
           # Because text may not be extracted in order
@@ -79,9 +104,52 @@ class PdfPageTextService
 
         , (error) =>
           deferred.reject({error:'Text extraction error',page:pdfPageProxy})
-          @log.warn('Text extraction error')
+          @log.warn('TEXT: Text extraction error')
         @pendingText[pageIndex] = deferred.promise
 
+    return deferred.promise
+
+
+  find: (query) =>
+    @log.log('TEXT: Search PDF Text %s', query)
+    searchDeferred = @$q.defer()
+    @doSearch(query, searchDeferred)
+    return searchDeferred.promise
+
+  doSearch: (query, deferred) =>
+    @log.log('TEXT: Do Search',query, @pageContents)
+
+    # array of page matches, where each entry is a list of substring indices
+    matches = []
+    # array of page results, where each entry is a list of strings
+    results = []
+
+    query = @normalize(query.toLowerCase())
+    queryLen = query.length
+
+    if (queryLen == 0)
+      deferred.resolve({matches:matches,results:results})
+      return deferred.promise
+
+    _.map @pageContents, (contents, index) =>
+      matches[index] = []
+      matchIdx = -queryLen;
+      while (true)
+        matchIdx = contents.indexOf(query, matchIdx + queryLen)
+        if (matchIdx == -1)
+          break
+        else
+          @log.log('TEXT: Match index %s', matchIdx)
+          matches[index].push(matchIdx)
+          lastSpaceIndex = contents.substring(0,matchIdx).lastIndexOf(" ")
+          results.push({id:index,number:index+1,text:contents.substr(lastSpaceIndex,200)})
+          @log.log('TEXT: Match list %O', matches[index])
+
+    @log.log('TEXT: Found matches %O', matches)
+    @log.log('TEXT: Results %O', @results)
+#    @pageSearchResultsModel.items = @results
+#    @publicationModel.updateMatches(query, @matches)
+    deferred.resolve({matches:matches,results:results})
     return deferred.promise
 
 app = angular.module 'angular-pdf-js'

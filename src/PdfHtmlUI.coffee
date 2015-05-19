@@ -86,6 +86,8 @@ class PdfHtmlUI
 
     @log.log('UI: Create Views %O %s, %s', pdfPageProxy, @containerElement.width(), @containerElement.height())
 
+    @firstPageProxy = pdfPageProxy
+
     viewport = @calculateInitialViewport(pdfPageProxy)
 
     @log.log('UI: Initial viewport %O',viewport)
@@ -150,7 +152,7 @@ class PdfHtmlUI
 
     @log.log('UI: Calculate initial viewport')
 
-    viewport = page.getViewport(1,0)
+    viewport = page.getViewport(@currentZoom,0)
     @log.log('UI: Viewport %O',viewport)
 
     vw = viewport.width
@@ -164,7 +166,7 @@ class PdfHtmlUI
     @defaultZoom = @currentZoom
 
     @log.log('UI: Canvas Container %s, %s. Viewport %O',@containerElement.width(),@containerElement.height(), viewport)
-    return page.getViewport(@currentZoom)
+    return page.getViewport(@currentZoom, 0)
 
   scrollTo: (pageIndex) =>
     @log.log('UI: Scroll to page %O', pageIndex)
@@ -210,6 +212,31 @@ class PdfHtmlUI
     rAF = null
     viewAreaElement.on('scroll', debounceScroll)
     return state
+
+  zoomIn: () =>
+    @currentZoom += 0.1
+    @log.log('TEXT: Zoom In',@currentZoom)
+    @resizeContainers()
+
+  zoomOut: () =>
+    @currentZoom -= 0.1
+    @log.log('TEXT: Zoom Out',@currentZoom)
+
+    if @currentZoom < 0.1
+      @currentZoom = 0.1
+    @resizeContainers()
+
+  resizeContainers:() =>
+    viewport = @firstPageProxy.getViewport(@currentZoom, 0)
+
+    @log.log('UI: Resize containers',viewport)
+    _.each @pageContainers, (p) =>
+      p.wrapper.css('width',viewport.width)
+      p.wrapper.css('height',viewport.height)
+      p.canvas.width = viewport.width
+      p.canvas.height = viewport.height
+
+    @pageHeight = @pageContainers[1].canvas.getBoundingClientRect().top - @scrollOffset
 
 app = angular.module 'angular-pdf-js'
 app.service 'PdfHtmlUI', PdfHtmlUI

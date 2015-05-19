@@ -48713,6 +48713,9 @@ var Cache = function cacheCache(size) {
     function PdfHtmlUI(document, log) {
       this.document = document;
       this.log = log;
+      this.resizeContainers = __bind(this.resizeContainers, this);
+      this.zoomOut = __bind(this.zoomOut, this);
+      this.zoomIn = __bind(this.zoomIn, this);
       this.watchScroll = __bind(this.watchScroll, this);
       this.scrollToPage = __bind(this.scrollToPage, this);
       this.scrollTo = __bind(this.scrollTo, this);
@@ -48816,6 +48819,7 @@ var Cache = function cacheCache(size) {
     PdfHtmlUI.prototype.createViews = function(pdfPageProxy) {
       var container, pageNumber, viewport, _i, _ref;
       this.log.log('UI: Create Views %O %s, %s', pdfPageProxy, this.containerElement.width(), this.containerElement.height());
+      this.firstPageProxy = pdfPageProxy;
       viewport = this.calculateInitialViewport(pdfPageProxy);
       this.log.log('UI: Initial viewport %O', viewport);
       for (pageNumber = _i = 1, _ref = this.model.pdf.numPages; _i <= _ref; pageNumber = _i += 1) {
@@ -48879,7 +48883,7 @@ var Cache = function cacheCache(size) {
     PdfHtmlUI.prototype.calculateInitialViewport = function(page) {
       var cw, viewport, vw;
       this.log.log('UI: Calculate initial viewport');
-      viewport = page.getViewport(1, 0);
+      viewport = page.getViewport(this.currentZoom, 0);
       this.log.log('UI: Viewport %O', viewport);
       vw = viewport.width;
       cw = this.containerElement.width() - 32;
@@ -48888,7 +48892,7 @@ var Cache = function cacheCache(size) {
       this.currentZoom = this.fitWidthScale;
       this.defaultZoom = this.currentZoom;
       this.log.log('UI: Canvas Container %s, %s. Viewport %O', this.containerElement.width(), this.containerElement.height(), viewport);
-      return page.getViewport(this.currentZoom);
+      return page.getViewport(this.currentZoom, 0);
     };
 
     PdfHtmlUI.prototype.scrollTo = function(pageIndex) {
@@ -48935,6 +48939,35 @@ var Cache = function cacheCache(size) {
       rAF = null;
       viewAreaElement.on('scroll', debounceScroll);
       return state;
+    };
+
+    PdfHtmlUI.prototype.zoomIn = function() {
+      this.currentZoom += 0.1;
+      this.log.log('TEXT: Zoom In', this.currentZoom);
+      return this.resizeContainers();
+    };
+
+    PdfHtmlUI.prototype.zoomOut = function() {
+      this.currentZoom -= 0.1;
+      this.log.log('TEXT: Zoom Out', this.currentZoom);
+      if (this.currentZoom < 0.1) {
+        this.currentZoom = 0.1;
+      }
+      return this.resizeContainers();
+    };
+
+    PdfHtmlUI.prototype.resizeContainers = function() {
+      var viewport,
+        _this = this;
+      viewport = this.firstPageProxy.getViewport(this.currentZoom, 0);
+      this.log.log('UI: Resize containers', viewport);
+      _.each(this.pageContainers, function(p) {
+        p.wrapper.css('width', viewport.width);
+        p.wrapper.css('height', viewport.height);
+        p.canvas.width = viewport.width;
+        return p.canvas.height = viewport.height;
+      });
+      return this.pageHeight = this.pageContainers[1].canvas.getBoundingClientRect().top - this.scrollOffset;
     };
 
     return PdfHtmlUI;
@@ -49464,9 +49497,8 @@ var Cache = function cacheCache(size) {
     PdfPageTextService.prototype.showMatches = function(query, matches) {
       var _this = this;
       this.log.log('TEXT: Show matches', matches, this.textLayers);
-      return _.each(this.textLayers, function(textLayer, index) {
-        var findController;
-        findController = {
+      return _.each(this.textLayers, function(textLayer) {
+        textLayer.findController = {
           active: true,
           selected: {
             pageIdx: textLayer.pageIdx
@@ -49477,7 +49509,6 @@ var Cache = function cacheCache(size) {
           },
           pageMatches: matches
         };
-        textLayer.findController = findController;
         return textLayer.updateMatches();
       });
     };
@@ -49504,6 +49535,8 @@ var Cache = function cacheCache(size) {
       this.htmlUI = htmlUI;
       this.log = log;
       this.$q = $q;
+      this.zoomOut = __bind(this.zoomOut, this);
+      this.zoomIn = __bind(this.zoomIn, this);
       this.find = __bind(this.find, this);
       this.textExtracted = __bind(this.textExtracted, this);
       this.loadAllText = __bind(this.loadAllText, this);
@@ -49548,6 +49581,7 @@ var Cache = function cacheCache(size) {
       this.totalPages = 0;
       this.allPagesReady = false;
       this.renderOnLoad = false;
+      this.visibleLimits = null;
       this.renderService.clear();
       this.htmlUI.clear();
       return this.textService.clear();
@@ -49607,6 +49641,10 @@ var Cache = function cacheCache(size) {
       var deferred, pageIndex;
       this.log.log('SVC: Show Page', pageNumber);
       pageIndex = pageNumber - 1;
+      this.visibleLimits = {
+        first: pageIndex,
+        last: pageIndex
+      };
       if (!this.pageProxies[pageIndex]) {
         return this.log.warn('SVC: Page not loaded from PDF', pageNumber);
       } else {
@@ -49626,10 +49664,17 @@ var Cache = function cacheCache(size) {
 
     PdfService.prototype.setVisibleLimits = function(firstPage, lastPage) {
       var pageIndex, _i, _results;
-      this.log.log('SVC: Set visible limits', firstPage, lastPage);
+      if (firstPage > this.pageProxies.length - 1) {
+        firstPage = this.pageProxies.length - 1;
+      }
       if (lastPage > this.pageProxies.length - 1) {
         lastPage = this.pageProxies.length - 1;
       }
+      this.visibleLimits = {
+        first: firstPage,
+        last: lastPage
+      };
+      this.log.log('SVC: Set visible limits', firstPage, lastPage);
       _results = [];
       for (pageIndex = _i = firstPage; firstPage <= lastPage ? _i <= lastPage : _i >= lastPage; pageIndex = firstPage <= lastPage ? ++_i : --_i) {
         _results.push(this.renderWithText(this.pageProxies[pageIndex]));
@@ -49798,6 +49843,22 @@ var Cache = function cacheCache(size) {
     PdfService.prototype.find = function(text) {
       this.log.log('SVC: Find', text);
       return this.textService.find(text);
+    };
+
+    PdfService.prototype.zoomIn = function() {
+      this.log.log('SVC: Zoom In', this.visibleLimits);
+      this.htmlUI.zoomIn();
+      if (this.visibleLimits) {
+        return this.setVisibleLimits(this.visibleLimits.first, this.visibleLimits.last);
+      }
+    };
+
+    PdfService.prototype.zoomOut = function() {
+      this.log.log('SVC: Zoom Out', this.visibleLimits);
+      this.htmlUI.zoomOut();
+      if (this.visibleLimits) {
+        return this.setVisibleLimits(this.visibleLimits.first, this.visibleLimits.last);
+      }
     };
 
     return PdfService;

@@ -18,6 +18,7 @@ class PdfService
     @totalPages = 0
     @allPagesReady = false
     @renderOnLoad = false
+    @visibleLimits = null
 
     @renderService.clear()
     @htmlUI.clear()
@@ -67,6 +68,8 @@ class PdfService
   showPage: (pageNumber) =>
     @log.log('SVC: Show Page',pageNumber)
     pageIndex = pageNumber - 1
+    @visibleLimits = {first:pageIndex,last:pageIndex}
+
     if not @pageProxies[pageIndex]
       @log.warn('SVC: Page not loaded from PDF',pageNumber)
     else
@@ -82,9 +85,13 @@ class PdfService
 
   # 0 based page indices for which pages are currently visible
   setVisibleLimits: (firstPage, lastPage) =>
-    @log.log('SVC: Set visible limits',firstPage, lastPage)
+    if firstPage > @pageProxies.length - 1
+      firstPage = @pageProxies.length - 1
     if lastPage > @pageProxies.length - 1
       lastPage = @pageProxies.length - 1
+
+    @visibleLimits = {first:firstPage,last:lastPage}
+    @log.log('SVC: Set visible limits',firstPage, lastPage)
     for pageIndex in [firstPage..lastPage]
       @renderWithText(@pageProxies[pageIndex])
 
@@ -216,6 +223,18 @@ class PdfService
   find: (text) =>
     @log.log('SVC: Find',text)
     return @textService.find(text)
+
+  zoomIn: () =>
+    @log.log('SVC: Zoom In', @visibleLimits)
+    @htmlUI.zoomIn()
+    if @visibleLimits
+      @setVisibleLimits(@visibleLimits.first,@visibleLimits.last)
+
+  zoomOut: () =>
+    @log.log('SVC: Zoom Out', @visibleLimits)
+    @htmlUI.zoomOut()
+    if @visibleLimits
+      @setVisibleLimits(@visibleLimits.first,@visibleLimits.last)
 
 app = angular.module 'angular-pdf-js'
 app.service 'PdfService', PdfService

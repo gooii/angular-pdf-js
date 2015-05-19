@@ -75,6 +75,10 @@ class PdfService
       else
         @log.log('SVC: renderWithText didnt return a promise', deferred)
 
+  scrollTo: (pageIndex) =>
+    @log.log('SVC: Scroll To',pageIndex)
+    @htmlUI.scrollTo(pageIndex)
+
   # 0 based page indices for which pages are currently visible
   setVisibleLimits: (firstPage, lastPage) =>
     @log.log('SVC: Set visible limits',firstPage, lastPage)

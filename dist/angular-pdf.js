@@ -48715,6 +48715,7 @@ var Cache = function cacheCache(size) {
       this.log = log;
       this.watchScroll = __bind(this.watchScroll, this);
       this.scrollToPage = __bind(this.scrollToPage, this);
+      this.scrollTo = __bind(this.scrollTo, this);
       this.calculateInitialViewport = __bind(this.calculateInitialViewport, this);
       this.createPageContainer = __bind(this.createPageContainer, this);
       this.createViews = __bind(this.createViews, this);
@@ -48743,6 +48744,7 @@ var Cache = function cacheCache(size) {
 
     PdfHtmlUI.prototype.setContainer = function(containerElement, scrollElement) {
       this.containerElement = containerElement;
+      this.scrollElement = scrollElement;
       this.log.log('UI: Set Container Element', this.containerElement);
       if (this.containerElement.length > 0) {
         this.containerFirstItem = this.containerElement[0];
@@ -48750,7 +48752,7 @@ var Cache = function cacheCache(size) {
         this.log.error('UI: Expected Jquery element');
       }
       this.visibleHeight = this.containerElement.parent().parent().height();
-      return this.watchScroll(scrollElement, this.scrollChanged);
+      return this.watchScroll(this.scrollElement, this.scrollChanged);
     };
 
     PdfHtmlUI.prototype.scrollChanged = function(event) {
@@ -48877,15 +48879,19 @@ var Cache = function cacheCache(size) {
       return page.getViewport(this.currentZoom);
     };
 
-    PdfHtmlUI.prototype.scrollToPage = function(page) {
-      var config, containerOffset, currentTop, offset;
-      this.log.log('UI: Scroll to page %O', page);
-      config = this.pageContainers[page.pageIndex];
+    PdfHtmlUI.prototype.scrollTo = function(pageIndex) {
+      var config, currentTop, offset;
+      this.log.log('UI: Scroll to page %O', pageIndex);
+      config = this.pageContainers[pageIndex];
       this.log.log('UI: Page config %O', config);
       offset = config.anchor.offset();
-      currentTop = this.containerElement.scrollTop();
-      containerOffset = this.containerElement.offset().top;
-      return this.containerElement.scrollTop(offset.top + currentTop - containerOffset);
+      currentTop = this.scrollElement.scrollTop();
+      this.log.log('Scroll To %s %s %s', offset.top, currentTop, this.scrollOffset);
+      return this.scrollElement.scrollTop(offset.top + currentTop - this.scrollOffset);
+    };
+
+    PdfHtmlUI.prototype.scrollToPage = function(page) {
+      return this.scrollTo(page.pageIndex);
     };
 
     PdfHtmlUI.prototype.watchScroll = function(viewAreaElement, callback) {
@@ -49352,6 +49358,7 @@ var Cache = function cacheCache(size) {
       this.loadAllPages = __bind(this.loadAllPages, this);
       this.loadPage = __bind(this.loadPage, this);
       this.setVisibleLimits = __bind(this.setVisibleLimits, this);
+      this.scrollTo = __bind(this.scrollTo, this);
       this.showPage = __bind(this.showPage, this);
       this.createPageInfos = __bind(this.createPageInfos, this);
       this.pdfLoadError = __bind(this.pdfLoadError, this);
@@ -49442,6 +49449,11 @@ var Cache = function cacheCache(size) {
           return this.log.log('SVC: renderWithText didnt return a promise', deferred);
         }
       }
+    };
+
+    PdfService.prototype.scrollTo = function(pageIndex) {
+      this.log.log('SVC: Scroll To', pageIndex);
+      return this.htmlUI.scrollTo(pageIndex);
     };
 
     PdfService.prototype.setVisibleLimits = function(firstPage, lastPage) {

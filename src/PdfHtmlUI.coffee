@@ -18,7 +18,7 @@ class PdfHtmlUI
   setup: (@model, @renderService) =>
     @log.log('UI: Setup HtmlUI')
 
-  setContainer: (@containerElement, scrollElement) =>
+  setContainer: (@containerElement, @scrollElement) =>
     @log.log('UI: Set Container Element',@containerElement)
     if @containerElement.length > 0
       @containerFirstItem = @containerElement[0]
@@ -27,7 +27,7 @@ class PdfHtmlUI
 
     @visibleHeight = @containerElement.parent().parent().height()
 
-    @watchScroll(scrollElement, @scrollChanged)
+    @watchScroll(@scrollElement, @scrollChanged)
 
   scrollChanged: (event) =>
     rect = @containerFirstItem.getBoundingClientRect()
@@ -155,17 +155,19 @@ class PdfHtmlUI
     @log.log('UI: Canvas Container %s, %s. Viewport %O',@containerElement.width(),@containerElement.height(), viewport)
     return page.getViewport(@currentZoom)
 
-  scrollToPage: (page) =>
-    @log.log('UI: Scroll to page %O', page)
+  scrollTo: (pageIndex) =>
+    @log.log('UI: Scroll to page %O', pageIndex)
     # scroll to named anchor
-    config = @pageContainers[page.pageIndex]
+    config = @pageContainers[pageIndex]
 
     @log.log 'UI: Page config %O', config
     offset = config.anchor.offset()
-    currentTop = @containerElement.scrollTop()
-    containerOffset = @containerElement.offset().top
-    #      @log.log('Scroll To %s %s %s', offset.top, currentTop, containerOffset)
-    @containerElement.scrollTop(offset.top + currentTop - containerOffset)
+    currentTop = @scrollElement.scrollTop()
+    @log.log('Scroll To %s %s %s', offset.top, currentTop, @scrollOffset)
+    @scrollElement.scrollTop(offset.top + currentTop - @scrollOffset)
+
+  scrollToPage: (page) =>
+    @scrollTo(page.pageIndex)
 
   # Adapted from PDF.js source
   # Helper function to start monitoring the scroll event and converting them into

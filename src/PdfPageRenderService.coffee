@@ -220,6 +220,15 @@ class PdfPageRenderService
   renderError: (err) =>
     @log.error('Render: Render error %s', err)
 
+  cancelJob: (job) =>
+    @log.log('Render: Cancel job',job)
+    if @currentJob == job
+      @log.log('Render: not cancelling current job')
+    else if @queue.length and (@queue.indexOf(job) > -1)
+      prevLength = @queue.length
+      _.remove(@queue,job)
+      @log.log('Render: remove job from queue', prevLength, queue.length)
+
   createDrawingContext: (canvas, viewport) =>
     ctx = canvas.getContext('2d')
     ctx.save()

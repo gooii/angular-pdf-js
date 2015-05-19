@@ -200,6 +200,10 @@ class PdfService
     renderConfig = @htmlUI.getRenderConfigForPage(pdfPage)
     return @renderService.renderPage(pdfPage, renderConfig)
 
+  cancel: (renderJob) =>
+    @log.log('SVC: Cancel render job',renderJob)
+    @renderService.cancelJob(renderJob)
+
   updateMatches: (query, matches) =>
     return @textService.updateMatches(query, matches)
 

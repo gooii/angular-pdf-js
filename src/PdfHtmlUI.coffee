@@ -25,18 +25,19 @@ class PdfHtmlUI
     else
       @log.error('UI: Expected Jquery element')
 
-    @visibleHeight = @containerElement.parent().parent().height()
+    @visibleHeight = @containerElement.parent().height()
+
+    @log.log('UI: setContainer',@containerFirstItem.getBoundingClientRect(), @visibleHeight)
 
     @watchScroll(@scrollElement, @scrollChanged)
 
   scrollChanged: (event) =>
-    rect = @containerFirstItem.getBoundingClientRect()
-    scrollPosTop = rect.top - @scrollOffset
+    scrollPosTop = @containerElement.scrollTop()
 
-    @log.log('UI: Scroll',scrollPosTop, @pageHeight, @visibleHeight, rect)
+    @log.log('UI: Scroll',scrollPosTop, @pageHeight, @visibleHeight)
     if @pageHeight
-      topPage = -(scrollPosTop / @pageHeight)
-      bottomPage = -((scrollPosTop - @visibleHeight) / @pageHeight)
+      topPage = scrollPosTop / @pageHeight
+      bottomPage = (scrollPosTop + @visibleHeight) / @pageHeight
 
       topVisiblePage = Math.floor(topPage)
       bottomVisiblePage = Math.floor(bottomPage)
@@ -103,7 +104,7 @@ class PdfHtmlUI
     if @pageContainers.length > 1
       @scrollOffset = @pageRect.top
       @pageHeight = @pageContainers[1].canvas.getBoundingClientRect().top - @scrollOffset
-      @log.log('UI: Page Height',@pageHeight)
+      @log.log('UI: Scroll Offset %s Page Height %s',@scrollOffset, @pageHeight)
 
     return @pageContainers[0]
 

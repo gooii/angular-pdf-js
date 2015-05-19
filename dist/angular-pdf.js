@@ -48751,18 +48751,18 @@ var Cache = function cacheCache(size) {
       } else {
         this.log.error('UI: Expected Jquery element');
       }
-      this.visibleHeight = this.containerElement.parent().parent().height();
+      this.visibleHeight = this.containerElement.parent().height();
+      this.log.log('UI: setContainer', this.containerFirstItem.getBoundingClientRect(), this.visibleHeight);
       return this.watchScroll(this.scrollElement, this.scrollChanged);
     };
 
     PdfHtmlUI.prototype.scrollChanged = function(event) {
-      var bottomPage, bottomVisiblePage, rect, scrollPosTop, topPage, topVisiblePage;
-      rect = this.containerFirstItem.getBoundingClientRect();
-      scrollPosTop = rect.top - this.scrollOffset;
-      this.log.log('UI: Scroll', scrollPosTop, this.pageHeight, this.visibleHeight, rect);
+      var bottomPage, bottomVisiblePage, scrollPosTop, topPage, topVisiblePage;
+      scrollPosTop = this.containerElement.scrollTop();
+      this.log.log('UI: Scroll', scrollPosTop, this.pageHeight, this.visibleHeight);
       if (this.pageHeight) {
-        topPage = -(scrollPosTop / this.pageHeight);
-        bottomPage = -((scrollPosTop - this.visibleHeight) / this.pageHeight);
+        topPage = scrollPosTop / this.pageHeight;
+        bottomPage = (scrollPosTop + this.visibleHeight) / this.pageHeight;
         topVisiblePage = Math.floor(topPage);
         bottomVisiblePage = Math.floor(bottomPage);
         this.log.log('UI: Page : ', topVisiblePage, bottomVisiblePage);
@@ -48829,7 +48829,7 @@ var Cache = function cacheCache(size) {
       if (this.pageContainers.length > 1) {
         this.scrollOffset = this.pageRect.top;
         this.pageHeight = this.pageContainers[1].canvas.getBoundingClientRect().top - this.scrollOffset;
-        this.log.log('UI: Page Height', this.pageHeight);
+        this.log.log('UI: Scroll Offset %s Page Height %s', this.scrollOffset, this.pageHeight);
       }
       return this.pageContainers[0];
     };
@@ -49007,6 +49007,7 @@ var Cache = function cacheCache(size) {
       this.textService = textService;
       this.createViewport = __bind(this.createViewport, this);
       this.createDrawingContext = __bind(this.createDrawingContext, this);
+      this.cancelJob = __bind(this.cancelJob, this);
       this.renderError = __bind(this.renderError, this);
       this.jobDone = __bind(this.jobDone, this);
       this.doRenderJob = __bind(this.doRenderJob, this);
@@ -49178,6 +49179,18 @@ var Cache = function cacheCache(size) {
       return this.log.error('Render: Render error %s', err);
     };
 
+    PdfPageRenderService.prototype.cancelJob = function(job) {
+      var prevLength;
+      this.log.log('Render: Cancel job', job);
+      if (this.currentJob === job) {
+        return this.log.log('Render: not cancelling current job');
+      } else if (this.queue.length && (this.queue.indexOf(job) > -1)) {
+        prevLength = this.queue.length;
+        _.remove(this.queue, job);
+        return this.log.log('Render: remove job from queue', prevLength, queue.length);
+      }
+    };
+
     PdfPageRenderService.prototype.createDrawingContext = function(canvas, viewport) {
       var ctx;
       ctx = canvas.getContext('2d');
@@ -49341,6 +49354,7 @@ var Cache = function cacheCache(size) {
       this.log = log;
       this.$q = $q;
       this.updateMatches = __bind(this.updateMatches, this);
+      this.cancel = __bind(this.cancel, this);
       this.renderWithText = __bind(this.renderWithText, this);
       this.render = __bind(this.render, this);
       this.destroy = __bind(this.destroy, this);
@@ -49605,6 +49619,11 @@ var Cache = function cacheCache(size) {
       this.log.log('SVC: Render with text %s', pdfPage.pageNumber);
       renderConfig = this.htmlUI.getRenderConfigForPage(pdfPage);
       return this.renderService.renderPage(pdfPage, renderConfig);
+    };
+
+    PdfService.prototype.cancel = function(renderJob) {
+      this.log.log('SVC: Cancel render job', renderJob);
+      return this.renderService.cancelJob(renderJob);
     };
 
     PdfService.prototype.updateMatches = function(query, matches) {

@@ -42,10 +42,17 @@ class PdfPageRenderService
   # Pages which aren't yet ready for rendering but have been requested
   pendingPages = []
 
-  # Pages queued for rendering
+  # Jobs queued for rendering. This is a priority queue, jobs at the front
+  # get processed first
   queue = []
 
+  # Jobs queued for rendering that are waiting for text content extraction
+  # This is a map from pageIndex to renderJob
+  textQueue = {}
+
+  # Cache of completed render jobs with text layers
   cache = []
+  # Cache of completed render jobs without text layers
   cacheWithoutText = []
 
   @$inject: [   '$q', '$log', '$timeout', 'PdfPageTextService']
@@ -58,6 +65,7 @@ class PdfPageRenderService
     @busy = false
     @pendingPages = []
     @queue = []
+    @textQueue = []
     @cache = []
     @cacheWithoutText = []
 
@@ -74,26 +82,49 @@ class PdfPageRenderService
 
     # Check if job is in the queue
     if @queue.length > 0
-      _.each @queue, (job) =>
+      _.forEach @queue, (job) =>
         if (job.page == page) && (job.context.viewport.scale == renderConfig.viewport.scale)
-          @log.log('Matching job found in queue')
+          @log.log('Render: Matching job found in queue')
           return job
 
     # Check if job is currently being rendered
     if @currentJob && (@currentJob.page == page) && (@currentJob.context.viewport.scale == renderConfig.viewport.scale)
-      @log.log('Current job matches request')
+      @log.log('Render: Current job matches request')
       return @currentJob
 
-    if renderConfig.text
-      waitingForText = @textService.isWaitingFor(page)
-      @log.log('Render: Waiting for text',waitingForText)
-      if waitingForText
-        @log.log('Render: Waiting for text from page',page.pageIndex)
-        # TODO : keep separate queue of jobs that are scheduled for text extraction
-        # so we can return the job here. At the moment the job is only held within
-        # the context of the _.partial application below.
-        return null
+    # Create new render job
+    renderJob = @createJob(page, renderConfig)
 
+    # Does this job need a text layer render?
+    if renderConfig.text
+      # Check if the job is already waiting for text content
+      job = @textQueue[page.pageIndex]
+      if job && (job.page == page) && (job.context.viewport.scale == renderConfig.viewport.scale)
+        @log.log('Render: Matching job found in text queue')
+        return job
+
+      # Check if the text content has been requested externally
+      textPromise = @textService.isWaitingFor(page)
+      @log.log('Render: Text Promise',textPromise)
+
+      if not textPromise
+        # Text content hasn't been requested yet so request it before rendering
+        @log.log('Render: Request text before rendering',page.pageIndex)
+        textPromise = @textService.extractPageText(page)
+
+      t = _.partial(@textReady, renderJob)
+      te = _.partial(@textError, renderJob)
+      textPromise.then t, te
+
+      # store job in the text queue
+      @textQueue[page.pageIndex] = renderJob
+      @log.log('Stored job in text queue',@textQueue)
+      return renderJob
+
+    @addToQueue(renderJob)
+    return renderJob
+
+  createJob: (page, renderConfig) =>
     renderContext = {
       canvasContext: @createDrawingContext(renderConfig.canvas, renderConfig.viewport)
       viewport: renderConfig.viewport
@@ -104,18 +135,6 @@ class PdfPageRenderService
 
     if renderConfig.text
       renderJob.textDiv = renderConfig.textLayer
-
-      if @textService.textContent[page.pageIndex]
-        @log.log('Render: Text content available for %s', page.pageIndex)
-        return @addToQueue(renderJob)
-      else
-        @log.log('Render: Requesting text for %s', page.pageIndex)
-        textPromise = @textService.extractPageText(page)
-        t = _.partial(@textReady, renderJob)
-        te = _.partial(@textError, renderJob)
-        textPromise.then t, te
-    else
-      @addToQueue(renderJob)
 
     return renderJob
 
@@ -132,14 +151,18 @@ class PdfPageRenderService
       if cachedPage.context.viewport.scale == renderConfig.viewport.scale
         return cachedPage
       else
-        @log.log('Cached page has different resolution')
+        @log.log('Render: Cached page has different resolution')
 
   textError: (renderJob, textContent) =>
     @log.error('Render: Text error %O %O', renderJob, textContent)
+    renderJob.textDiv = null
+    renderJob.text = false
+    @textQueue[renderJob.page.pageIndex] = null
     @addToQueue(renderJob)
 
   textReady: (renderJob, textContent) =>
     @log.log('Render: Text ready %O %O', renderJob, textContent)
+    @textQueue[renderJob.page.pageIndex] = null
     @addToQueue(renderJob)
 
   # Add a render job to the queue and return it

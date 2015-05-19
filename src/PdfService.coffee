@@ -66,10 +66,11 @@ class PdfService
 
   showPage: (pageNumber) =>
     @log.log('SVC: Show Page',pageNumber)
-    if not @pageProxies[pageNumber - 1]
+    pageIndex = pageNumber - 1
+    if not @pageProxies[pageIndex]
       @log.warn('SVC: Page not loaded from PDF',pageNumber)
     else
-      deferred = @renderWithText(@pageProxies[pageNumber - 1])
+      deferred = @renderWithText(@pageProxies[pageIndex])
       if deferred
         return deferred.promise
       else
@@ -89,15 +90,15 @@ class PdfService
 
   # Load a page by page number (1 based)
   # return Promise which resolves when the page has loaded (but not rendered)
-  loadPage: (pageNumber) =>
-    @log.log('SVC: Show Page %s',pageNumber)
-    if @pageInfos[pageNumber - 1].hasData
+  loadPage: (pageIndex) =>
+    @log.log('SVC: Load Page %s',pageIndex)
+    if @pageInfos[pageIndex].hasData
       @log.log('SVC: Page already has data. Scroll into view?')
     else
-      return @fetchPageFromPdf(pageNumber)
+      return @fetchPageFromPdf(pageIndex)
 
+  # Retrieve all Page Proxies from the PDF document
   loadAllPages: () =>
-
     @loadPromise = @$q.defer()
     @log.log('SVC: Load All Pages',@allPagesReady)
     if !@allPagesReady and @currentPage == 0
@@ -109,31 +110,30 @@ class PdfService
 
   loadNext: () =>
     @log.log('SVC: Load Next',@currentPage, @allPagesReady)
-    @currentPage++
     if !@allPagesReady
-      @loadPage(@currentPage).then @loadNext
+      @loadPage(@currentPage++).then @loadNext
     else
       @loadPromise.resolve()
 
-  fetchPageFromPdf: (pageNumber) =>
-    @log.log('SVC: Fetch page from PDF %O number %s. numPages %s',@pdf, pageNumber, @totalPages)
-    if @pageProxies[pageNumber - 1]
-      return @pageProxies[pageNumber - 1]
-    else if pageNumber <= 0 or pageNumber > @totalPages
+  fetchPageFromPdf: (pageIndex) =>
+    @log.log('SVC: Fetch page from PDF %O index %s. numPages %s',@pdf, pageIndex, @totalPages)
+    if @pageProxies[pageIndex]
+      return @pageProxies[pageIndex]
+    else if pageIndex < 0 or pageIndex > @totalPages
       @log.warn('SVC: Page out of bounds')
-    else if not @pageProxies[pageNumber - 1]
+    else if not @pageProxies[pageIndex]
       @log.log('SVC: Requesting PDF page')
-      promise = @pdf.getPage(pageNumber)
+      promise = @pdf.getPage(pageIndex + 1)
       promise.then(@pageLoaded, @pageLoadError)
       return promise
     else
       @log.log('SVC: Ignoring page request')
 
   pageLoaded: (page) =>
-    @log.log('SVC: Page Loaded %s %O', page.pageNumber, page)
+    @log.log('SVC: Page Loaded %s %O', page.pageIndex, page)
 
-    @pageInfos[page.pageNumber - 1].hasData = true
-    @pageProxies[page.pageNumber - 1] = page
+    @pageInfos[page.pageIndex].hasData = true
+    @pageProxies[page.pageIndex] = page
     if @pageProxies.length == @pageInfos.length
       @log.info('SVC: All pages ready')
       @allPagesReady = true
@@ -143,7 +143,7 @@ class PdfService
       @log.log('SVC: Render Job',renderJob)
       renderJob.promise.then @pageRendered, @pageRenderError
     else
-      @log.log('Not rendering page on load : ',page.pageNumber - 1)
+      @log.log('Not rendering page on load : ',page.pageIndex)
 
   pageRendered: (renderJob) =>
     @log.log('SVC: Page Rendered',renderJob)
@@ -157,27 +157,14 @@ class PdfService
   pageLoadError: () =>
     @log.error 'SVC: Page load error'
 
-    # Get page by page number NOT PAGE INDEX
-  getPageInfo: (number) =>
-    @log.log('SVC: Get page %s %O', number, @pageInfos[number-1])
-    return @pageInfos[number-1]
+  getPageInfo: (index) =>
+    return @pageInfos[index]
 
-  # Get the original PDFPageProxy for the wrapper
-  getPdfPageProxy: (pageInfo) =>
-    @log.log('SVC: Get page source for %O (%s)', pageInfo, pageInfo.id)
-    if @pageProxies[pageInfo.id - 1]
-      return @pageProxies[pageInfo.id - 1]
+  getPdfPage: (pageIndex) =>
+    if @pageProxies[pageIndex]
+      return @pageProxies[pageIndex]
     else
-      @log.info('SVC: Page source not available, fetching page proxy from PDF. id: %s', pageInfo.id)
-      return @fetchPageFromPdf(pageInfo.id)
-
-  getProxyAtIndex: (index) =>
-    return @pageProxies[index]
-
-  getPdfPageProxyByNumber: (pageNumber) =>
-    info = @getPageInfo(pageNumber)
-    proxy = @getPdfPageProxy(info)
-    return proxy
+      @log.warn('Proxy not available',pageIndex)
 
   destroy: () =>
     @log.log('SVC: Destroy')
@@ -196,9 +183,14 @@ class PdfService
       @log.warn('SVC: Cant render without page proxy',number)
 
   renderWithText: (pdfPage) =>
-    @log.log('SVC: Render with text %s',pdfPage.pageNumber)
+    @log.log('SVC: Render with text %s',pdfPage.pageIndex)
     renderConfig = @htmlUI.getRenderConfigForPage(pdfPage)
-    return @renderService.renderPage(pdfPage, renderConfig)
+    renderJob = @renderService.renderPage(pdfPage, renderConfig)
+    renderJob.promise.then @removeLoadingIcon
+    return renderJob
+
+  removeLoadingIcon: (renderJob) =>
+    @htmlUI.removeLoadingIcon(renderJob)
 
   cancel: (renderJob) =>
     @log.log('SVC: Cancel render job',renderJob)
@@ -206,6 +198,20 @@ class PdfService
 
   updateMatches: (query, matches) =>
     return @textService.updateMatches(query, matches)
+
+  loadAllText: () =>
+    if !@textService.textContentReady
+      @log.log('SVC: load all text')
+      textPromises = _.map @pageProxies, (page) =>
+        @textService.extractPageText(page)
+      allTextPromise = @$q.all(textPromises)
+      allTextPromise.then @textExtracted
+      return allTextPromise
+    else
+      @log.info('SVC: All text extracted')
+
+  textExtracted: () =>
+    @log.log('SVC: All text extracted')
 
 app = angular.module 'angular-pdf-js'
 app.service 'PdfService', PdfService

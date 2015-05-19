@@ -6,6 +6,9 @@ class PdfPageTextService
     @clear()
 
   clear: () =>
+
+    @textContentReady = false
+
     # extract text from pages
     @textContent = []
 
@@ -33,9 +36,7 @@ class PdfPageTextService
 
   # Has this page been queued for text extraction?
   isWaitingFor: (pdfPageProxy) =>
-    pending = @pendingText[pdfPageProxy.pageIndex]
-    @log.log('TEXT: isWaitingFor',pending)
-    return pending != undefined
+    return @pendingText[pdfPageProxy.pageIndex]
 
   # Extract text from a PdfPageProxy
   # returns Promise
@@ -56,7 +57,7 @@ class PdfPageTextService
         textPromise.then (textContent) =>
           @log.log('TEXT: Extracted page text %s %O', pageIndex,textContent)
           @textContent[pageIndex] = textContent
-          @pendingText[pageIndex] = null
+          #@pendingText[pageIndex] = null
           # Count how many pages have been completed.
           # Because text may not be extracted in order
           # the @textContent array is scanned for non-null entries.

@@ -57,7 +57,7 @@ class PdfHtmlUI
   createUI: () =>
     @log.log('UI: Create UI. Size : %s, %s', @containerElement.width(), @containerElement.height())
     if @model.pdf.numPages > 0
-      pageProxy = @model.getPdfPageProxyByNumber(1)
+      pageProxy = @model.getPdfPage(0)
       # If the page is ready it has a pageIndex, otherwise its a promise
       if pageProxy.pageIndex
         createViews(pageProxy)
@@ -90,9 +90,9 @@ class PdfHtmlUI
 
     @log.log('UI: Initial viewport %O',viewport)
 
-    for pageIndex in [1..@model.pdf.numPages] by 1
-      @log.log('UI: Creating page container %s', pageIndex)
-      container = @createPageContainer(@containerElement, @model.getPageInfo(pageIndex), viewport)
+    for pageNumber in [1..@model.pdf.numPages] by 1
+      @log.log('UI: Creating page container %s', pageNumber)
+      container = @createPageContainer(@containerElement, @model.getPageInfo(pageNumber-1), viewport)
       @pageContainers.push(container)
 
     @log.log('UI: Created page containers', @pageContainers)
@@ -108,13 +108,13 @@ class PdfHtmlUI
 
     return @pageContainers[0]
 
-  createPageContainer: (parent, page, viewport) =>
-    @log.log('UI: Create page container %O %O %O',parent, page, viewport)
+  createPageContainer: (parent, pageInfo, viewport) =>
+    @log.log('UI: Create page container %O %O %O',parent, pageInfo, viewport)
     anchor = angular.element('<a></a>')
-    anchor.attr('name', 'page' + page.id)
+    anchor.attr('name', 'page' + pageInfo.id)
 
     canvasWrapper = angular.element('<div></div>')
-    canvasWrapper.attr('id', 'pageContainer' + page.id)
+    canvasWrapper.attr('id', 'pageContainer' + pageInfo.id)
 
     canvasWrapper.css('width',viewport.width)
     canvasWrapper.css('height',viewport.height)
@@ -122,7 +122,7 @@ class PdfHtmlUI
 
     canvas = document.createElement('canvas')
 
-    canvas.id = 'page' + page.id
+    canvas.id = 'page' + pageInfo.id
     canvas.width = viewport.width
     canvas.height = viewport.height
     canvas.className = @canvasClass
@@ -134,7 +134,17 @@ class PdfHtmlUI
     parent.append(anchor)
     parent.append(canvasWrapper)
 
-    return {wrapper:canvasWrapper, canvas:canvas, page:page, anchor:anchor, textLayer:textLayer[0], text:true}
+    # TODO : Work out all that nonsense with position relative / absolute etc..
+    loadingIconDiv = angular.element('<div class="loadingIcon"></div>')
+#    canvasWrapper.append(loadingIconDiv)
+
+    return {wrapper:canvasWrapper, canvas:canvas, page:pageInfo, anchor:anchor, textLayer:textLayer[0], text:true, loadingIcon:loadingIconDiv}
+
+  removeLoadingIcon: (renderJob) =>
+    container = @pageContainers[renderJob.page.pageIndex]
+    @log.log('UI: Remove loading icon',renderJob, container)
+    if container and container.loadingIcon
+      container.loadingIcon.remove()
 
   calculateInitialViewport: (page) =>
 

@@ -147,10 +147,23 @@ class PdfPageTextService
 
     @log.log('TEXT: Found matches %O', matches)
     @log.log('TEXT: Results %O', @results)
-#    @pageSearchResultsModel.items = @results
-#    @publicationModel.updateMatches(query, @matches)
+    @showMatches(query, matches)
     deferred.resolve({matches:matches,results:results})
     return deferred.promise
+
+  showMatches: (query, matches) =>
+    @log.log('TEXT: Show matches', matches, @textLayers)
+    _.each @textLayers, (textLayer) =>
+      textLayer.findController = {
+        active:true
+        selected:
+          pageIdx:textLayer.pageIdx
+        state:
+          query:query
+          highlightAll:true
+        pageMatches:matches
+      }
+      textLayer.updateMatches()
 
 app = angular.module 'angular-pdf-js'
 

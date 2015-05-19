@@ -49293,6 +49293,7 @@ var Cache = function cacheCache(size) {
       var replace;
       this.log = log;
       this.$q = $q;
+      this.showMatches = __bind(this.showMatches, this);
       this.doSearch = __bind(this.doSearch, this);
       this.find = __bind(this.find, this);
       this.extractPageText = __bind(this.extractPageText, this);
@@ -49452,11 +49453,33 @@ var Cache = function cacheCache(size) {
       });
       this.log.log('TEXT: Found matches %O', matches);
       this.log.log('TEXT: Results %O', this.results);
+      this.showMatches(query, matches);
       deferred.resolve({
         matches: matches,
         results: results
       });
       return deferred.promise;
+    };
+
+    PdfPageTextService.prototype.showMatches = function(query, matches) {
+      var _this = this;
+      this.log.log('TEXT: Show matches', matches, this.textLayers);
+      return _.each(this.textLayers, function(textLayer, index) {
+        var findController;
+        findController = {
+          active: true,
+          selected: {
+            pageIdx: textLayer.pageIdx
+          },
+          state: {
+            query: query,
+            highlightAll: true
+          },
+          pageMatches: matches
+        };
+        textLayer.findController = findController;
+        return textLayer.updateMatches();
+      });
     };
 
     return PdfPageTextService;

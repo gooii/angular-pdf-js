@@ -211,6 +211,5 @@ class PdfHtmlUI
     viewAreaElement.on('scroll', debounceScroll)
     return state
 
-
 app = angular.module 'angular-pdf-js'
 app.service 'PdfHtmlUI', PdfHtmlUI

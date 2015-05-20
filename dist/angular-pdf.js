@@ -48835,6 +48835,7 @@ var Cache = function cacheCache(size) {
         this.scrollOffset = this.pageRect.top;
         this.pageHeight = this.pageContainers[1].canvas.getBoundingClientRect().top - this.scrollOffset;
         this.log.log('UI: Scroll Offset %s Page Height %s', this.scrollOffset, this.pageHeight);
+        this.scrollChanged();
       }
       return this.pageContainers[0];
     };
@@ -48953,7 +48954,8 @@ var Cache = function cacheCache(size) {
       if (this.currentZoom < 0.1) {
         this.currentZoom = 0.1;
       }
-      return this.resizeContainers();
+      this.resizeContainers();
+      return this.scrollChanged();
     };
 
     PdfHtmlUI.prototype.resizeContainers = function() {

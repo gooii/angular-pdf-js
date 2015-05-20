@@ -107,6 +107,7 @@ class PdfHtmlUI
       @scrollOffset = @pageRect.top
       @pageHeight = @pageContainers[1].canvas.getBoundingClientRect().top - @scrollOffset
       @log.log('UI: Scroll Offset %s Page Height %s',@scrollOffset, @pageHeight)
+      @scrollChanged()
 
     return @pageContainers[0]
 
@@ -225,6 +226,7 @@ class PdfHtmlUI
     if @currentZoom < 0.1
       @currentZoom = 0.1
     @resizeContainers()
+    @scrollChanged()
 
   resizeContainers:() =>
     viewport = @firstPageProxy.getViewport(@currentZoom, 0)

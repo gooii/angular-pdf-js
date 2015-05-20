@@ -41,21 +41,6 @@ class PdfPageTextService
     return text.replace @normalizationRegex, (ch) =>
       return @charactersToNormalize[ch]
 
-  updateMatches: (query, matches) =>
-    @log.log('TEXT: Update matches %O %O', matches, @textLayers)
-    _.each @textLayers, (textLayer, index) =>
-      findController = {
-        active:true
-        selected:
-          pageIdx:textLayer.pageIdx
-        state:
-          query:query
-          highlightAll:true
-        pageMatches:matches
-      }
-      textLayer.findController = findController
-      textLayer.updateMatches()
-
   # Has this page been queued for text extraction?
   isWaitingFor: (pdfPageProxy) =>
     return @pendingText[pdfPageProxy.pageIndex]
@@ -147,23 +132,8 @@ class PdfPageTextService
 
     @log.log('TEXT: Found matches %O', matches)
     @log.log('TEXT: Results %O', @results)
-    @showMatches(query, matches)
-    deferred.resolve({matches:matches,results:results})
+    deferred.resolve({query:query,matches:matches,results:results})
     return deferred.promise
-
-  showMatches: (query, matches) =>
-    @log.log('TEXT: Show matches', matches, @textLayers)
-    _.each @textLayers, (textLayer) =>
-      textLayer.findController = {
-        active:true
-        selected:
-          pageIdx:textLayer.pageIdx
-        state:
-          query:query
-          highlightAll:true
-        pageMatches:matches
-      }
-      textLayer.updateMatches()
 
 app = angular.module 'angular-pdf-js'
 

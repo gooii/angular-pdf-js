@@ -62,6 +62,9 @@ class PdfPageRenderService
   clear: () =>
     @log.log('Render: Clear')
 
+    # TextLayerBuilder objects used for rendering the text and search highlights
+    @textLayers = []
+
     @busy = false
     @pendingPages = []
     @queue = []
@@ -210,7 +213,7 @@ class PdfPageRenderService
         tlbOptions = {textLayerDiv:@currentJob.textDiv, pageIndex:pageIndex, viewport:@currentJob.context.viewport}
         @log.log('Render: TLB Options %O', tlbOptions)
         textLayer = new TextLayerBuilder(tlbOptions);
-        @textService.textLayers[pageIndex] = textLayer
+        @textLayers[pageIndex] = textLayer
         @log.log('Render: Text Layer %O. Text content %O', textLayer, textContent)
         textLayer.setTextContent(textContent)
         @currentJob.context.textLayer = textLayer
@@ -291,6 +294,21 @@ class PdfPageRenderService
       zoom = fitHeightScale
 
     return page.getViewport(zoom)
+
+  highlightText: (query, matches) =>
+    @log.log('TEXT: Show matches', matches, @textLayers)
+    _.each @textLayers, (textLayer) =>
+      if textLayer
+        textLayer.findController = {
+          active:true
+          selected:
+            pageIdx:textLayer.pageIdx
+          state:
+            query:query
+            highlightAll:true
+          pageMatches:matches
+        }
+        textLayer.updateMatches()
 
 app = angular.module 'angular-pdf-js'
 app.service 'PdfPageRenderService', PdfPageRenderService

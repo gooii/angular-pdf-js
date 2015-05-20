@@ -228,6 +228,11 @@ class PdfHtmlUI
     @resizeContainers()
     @scrollChanged()
 
+  resetZoom: () =>
+    @currentZoom = 1
+    @resizeContainers()
+    @scrollChanged()
+
   resizeContainers:() =>
     viewport = @firstPageProxy.getViewport(@currentZoom, 0)
 
@@ -238,7 +243,14 @@ class PdfHtmlUI
       p.canvas.width = viewport.width
       p.canvas.height = viewport.height
 
-    @pageHeight = @pageContainers[1].canvas.getBoundingClientRect().top - @scrollOffset
+    page1Top = @pageContainers[1].canvas.getBoundingClientRect().top
+    scrollPosTop = @containerElement.scrollTop()
+    @pageHeight = (scrollPosTop + page1Top) - @scrollOffset
+    @log.log('UI: Page Height',@pageHeight, scrollPosTop, @pageContainers[1].canvas.getBoundingClientRect())
+
+    if @pageHeight < 0
+      @log.error('Page height is less than zero. Something went wrong')
+      @pageHeight = viewport.height
 
 app = angular.module 'angular-pdf-js'
 app.service 'PdfHtmlUI', PdfHtmlUI

@@ -19,7 +19,7 @@ class PdfService
     @allPagesReady = false
     @renderOnLoad = false
     @visibleLimits = null
-
+    @searchResults = null
     @renderService.clear()
     @htmlUI.clear()
     @textService.clear()
@@ -68,16 +68,7 @@ class PdfService
   showPage: (pageNumber) =>
     @log.log('SVC: Show Page',pageNumber)
     pageIndex = pageNumber - 1
-    @visibleLimits = {first:pageIndex,last:pageIndex}
-
-    if not @pageProxies[pageIndex]
-      @log.warn('SVC: Page not loaded from PDF',pageNumber)
-    else
-      deferred = @renderWithText(@pageProxies[pageIndex])
-      if deferred
-        return deferred.promise
-      else
-        @log.log('SVC: renderWithText didnt return a promise', deferred)
+    @setVisibleLimits(pageIndex, pageIndex)
 
   scrollTo: (pageIndex) =>
     @log.log('SVC: Scroll To',pageIndex)
@@ -92,8 +83,14 @@ class PdfService
 
     @visibleLimits = {first:firstPage,last:lastPage}
     @log.log('SVC: Set visible limits',firstPage, lastPage)
+    renderRequests = []
     for pageIndex in [firstPage..lastPage]
-      @renderWithText(@pageProxies[pageIndex])
+      job = @renderWithText(@pageProxies[pageIndex])
+      renderRequests.push(job.promise)
+
+    if @searchResults
+      @$q.all(renderRequests).then () =>
+        @showSearchHighlights(@searchResults)
 
   # Load a page by page number (1 based)
   # return Promise which resolves when the page has loaded (but not rendered)
@@ -203,9 +200,6 @@ class PdfService
     @log.log('SVC: Cancel render job',renderJob)
     @renderService.cancelJob(renderJob)
 
-  updateMatches: (query, matches) =>
-    return @textService.updateMatches(query, matches)
-
   loadAllText: () =>
     if !@textService.textContentReady
       @log.log('SVC: load all text')
@@ -222,7 +216,13 @@ class PdfService
 
   find: (text) =>
     @log.log('SVC: Find',text)
-    return @textService.find(text)
+    findRequest = @textService.find(text)
+    findRequest.then @showSearchHighlights
+    return findRequest
+
+  showSearchHighlights: (@searchResults) =>
+    @log.log('Show search highlights',@searchResults)
+    @renderService.highlightText(@searchResults.query, @searchResults.matches)
 
   zoomIn: () =>
     @log.log('SVC: Zoom In', @visibleLimits)
@@ -233,8 +233,11 @@ class PdfService
   zoomOut: () =>
     @log.log('SVC: Zoom Out', @visibleLimits)
     @htmlUI.zoomOut()
-    if @visibleLimits
-      @setVisibleLimits(@visibleLimits.first,@visibleLimits.last)
+#    if @visibleLimits
+#      @setVisibleLimits(@visibleLimits.first,@visibleLimits.last)
+
+  resetZoom: () =>
+    @htmlUI.resetZoom()
 
 app = angular.module 'angular-pdf-js'
 app.service 'PdfService', PdfService

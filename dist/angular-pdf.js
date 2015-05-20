@@ -48714,6 +48714,7 @@ var Cache = function cacheCache(size) {
       this.document = document;
       this.log = log;
       this.resizeContainers = __bind(this.resizeContainers, this);
+      this.resetZoom = __bind(this.resetZoom, this);
       this.zoomOut = __bind(this.zoomOut, this);
       this.zoomIn = __bind(this.zoomIn, this);
       this.watchScroll = __bind(this.watchScroll, this);
@@ -48958,8 +48959,14 @@ var Cache = function cacheCache(size) {
       return this.scrollChanged();
     };
 
+    PdfHtmlUI.prototype.resetZoom = function() {
+      this.currentZoom = 1;
+      this.resizeContainers();
+      return this.scrollChanged();
+    };
+
     PdfHtmlUI.prototype.resizeContainers = function() {
-      var viewport,
+      var page1Top, scrollPosTop, viewport,
         _this = this;
       viewport = this.firstPageProxy.getViewport(this.currentZoom, 0);
       this.log.log('UI: Resize containers', viewport);
@@ -48969,7 +48976,14 @@ var Cache = function cacheCache(size) {
         p.canvas.width = viewport.width;
         return p.canvas.height = viewport.height;
       });
-      return this.pageHeight = this.pageContainers[1].canvas.getBoundingClientRect().top - this.scrollOffset;
+      page1Top = this.pageContainers[1].canvas.getBoundingClientRect().top;
+      scrollPosTop = this.containerElement.scrollTop();
+      this.pageHeight = (scrollPosTop + page1Top) - this.scrollOffset;
+      this.log.log('UI: Page Height', this.pageHeight, scrollPosTop, this.pageContainers[1].canvas.getBoundingClientRect());
+      if (this.pageHeight < 0) {
+        this.log.error('Page height is less than zero. Something went wrong');
+        return this.pageHeight = viewport.height;
+      }
     };
 
     return PdfHtmlUI;
@@ -49054,6 +49068,7 @@ var Cache = function cacheCache(size) {
       this.log = log;
       this.$timeout = $timeout;
       this.textService = textService;
+      this.highlightText = __bind(this.highlightText, this);
       this.createViewport = __bind(this.createViewport, this);
       this.createDrawingContext = __bind(this.createDrawingContext, this);
       this.cancelJob = __bind(this.cancelJob, this);
@@ -49073,6 +49088,7 @@ var Cache = function cacheCache(size) {
 
     PdfPageRenderService.prototype.clear = function() {
       this.log.log('Render: Clear');
+      this.textLayers = [];
       this.busy = false;
       this.pendingPages = [];
       this.queue = [];
@@ -49204,7 +49220,7 @@ var Cache = function cacheCache(size) {
           };
           this.log.log('Render: TLB Options %O', tlbOptions);
           textLayer = new TextLayerBuilder(tlbOptions);
-          this.textService.textLayers[pageIndex] = textLayer;
+          this.textLayers[pageIndex] = textLayer;
           this.log.log('Render: Text Layer %O. Text content %O', textLayer, textContent);
           textLayer.setTextContent(textContent);
           this.currentJob.context.textLayer = textLayer;
@@ -49294,6 +49310,27 @@ var Cache = function cacheCache(size) {
       return page.getViewport(zoom);
     };
 
+    PdfPageRenderService.prototype.highlightText = function(query, matches) {
+      var _this = this;
+      this.log.log('TEXT: Show matches', matches, this.textLayers);
+      return _.each(this.textLayers, function(textLayer) {
+        if (textLayer) {
+          textLayer.findController = {
+            active: true,
+            selected: {
+              pageIdx: textLayer.pageIdx
+            },
+            state: {
+              query: query,
+              highlightAll: true
+            },
+            pageMatches: matches
+          };
+          return textLayer.updateMatches();
+        }
+      });
+    };
+
     return PdfPageRenderService;
 
   })();
@@ -49328,12 +49365,10 @@ var Cache = function cacheCache(size) {
       var replace;
       this.log = log;
       this.$q = $q;
-      this.showMatches = __bind(this.showMatches, this);
       this.doSearch = __bind(this.doSearch, this);
       this.find = __bind(this.find, this);
       this.extractPageText = __bind(this.extractPageText, this);
       this.isWaitingFor = __bind(this.isWaitingFor, this);
-      this.updateMatches = __bind(this.updateMatches, this);
       this.normalize = __bind(this.normalize, this);
       this.clear = __bind(this.clear, this);
       replace = Object.keys(this.charactersToNormalize).join('');
@@ -49354,27 +49389,6 @@ var Cache = function cacheCache(size) {
       var _this = this;
       return text.replace(this.normalizationRegex, function(ch) {
         return _this.charactersToNormalize[ch];
-      });
-    };
-
-    PdfPageTextService.prototype.updateMatches = function(query, matches) {
-      var _this = this;
-      this.log.log('TEXT: Update matches %O %O', matches, this.textLayers);
-      return _.each(this.textLayers, function(textLayer, index) {
-        var findController;
-        findController = {
-          active: true,
-          selected: {
-            pageIdx: textLayer.pageIdx
-          },
-          state: {
-            query: query,
-            highlightAll: true
-          },
-          pageMatches: matches
-        };
-        textLayer.findController = findController;
-        return textLayer.updateMatches();
       });
     };
 
@@ -49488,31 +49502,12 @@ var Cache = function cacheCache(size) {
       });
       this.log.log('TEXT: Found matches %O', matches);
       this.log.log('TEXT: Results %O', this.results);
-      this.showMatches(query, matches);
       deferred.resolve({
+        query: query,
         matches: matches,
         results: results
       });
       return deferred.promise;
-    };
-
-    PdfPageTextService.prototype.showMatches = function(query, matches) {
-      var _this = this;
-      this.log.log('TEXT: Show matches', matches, this.textLayers);
-      return _.each(this.textLayers, function(textLayer) {
-        textLayer.findController = {
-          active: true,
-          selected: {
-            pageIdx: textLayer.pageIdx
-          },
-          state: {
-            query: query,
-            highlightAll: true
-          },
-          pageMatches: matches
-        };
-        return textLayer.updateMatches();
-      });
     };
 
     return PdfPageTextService;
@@ -49537,12 +49532,13 @@ var Cache = function cacheCache(size) {
       this.htmlUI = htmlUI;
       this.log = log;
       this.$q = $q;
+      this.resetZoom = __bind(this.resetZoom, this);
       this.zoomOut = __bind(this.zoomOut, this);
       this.zoomIn = __bind(this.zoomIn, this);
+      this.showSearchHighlights = __bind(this.showSearchHighlights, this);
       this.find = __bind(this.find, this);
       this.textExtracted = __bind(this.textExtracted, this);
       this.loadAllText = __bind(this.loadAllText, this);
-      this.updateMatches = __bind(this.updateMatches, this);
       this.cancel = __bind(this.cancel, this);
       this.removeLoadingIcon = __bind(this.removeLoadingIcon, this);
       this.renderWithText = __bind(this.renderWithText, this);
@@ -49584,6 +49580,7 @@ var Cache = function cacheCache(size) {
       this.allPagesReady = false;
       this.renderOnLoad = false;
       this.visibleLimits = null;
+      this.searchResults = null;
       this.renderService.clear();
       this.htmlUI.clear();
       return this.textService.clear();
@@ -49640,23 +49637,10 @@ var Cache = function cacheCache(size) {
     };
 
     PdfService.prototype.showPage = function(pageNumber) {
-      var deferred, pageIndex;
+      var pageIndex;
       this.log.log('SVC: Show Page', pageNumber);
       pageIndex = pageNumber - 1;
-      this.visibleLimits = {
-        first: pageIndex,
-        last: pageIndex
-      };
-      if (!this.pageProxies[pageIndex]) {
-        return this.log.warn('SVC: Page not loaded from PDF', pageNumber);
-      } else {
-        deferred = this.renderWithText(this.pageProxies[pageIndex]);
-        if (deferred) {
-          return deferred.promise;
-        } else {
-          return this.log.log('SVC: renderWithText didnt return a promise', deferred);
-        }
-      }
+      return this.setVisibleLimits(pageIndex, pageIndex);
     };
 
     PdfService.prototype.scrollTo = function(pageIndex) {
@@ -49665,7 +49649,8 @@ var Cache = function cacheCache(size) {
     };
 
     PdfService.prototype.setVisibleLimits = function(firstPage, lastPage) {
-      var pageIndex, _i, _results;
+      var job, pageIndex, renderRequests, _i,
+        _this = this;
       if (firstPage > this.pageProxies.length - 1) {
         firstPage = this.pageProxies.length - 1;
       }
@@ -49677,11 +49662,16 @@ var Cache = function cacheCache(size) {
         last: lastPage
       };
       this.log.log('SVC: Set visible limits', firstPage, lastPage);
-      _results = [];
+      renderRequests = [];
       for (pageIndex = _i = firstPage; firstPage <= lastPage ? _i <= lastPage : _i >= lastPage; pageIndex = firstPage <= lastPage ? ++_i : --_i) {
-        _results.push(this.renderWithText(this.pageProxies[pageIndex]));
+        job = this.renderWithText(this.pageProxies[pageIndex]);
+        renderRequests.push(job.promise);
       }
-      return _results;
+      if (this.searchResults) {
+        return this.$q.all(renderRequests).then(function() {
+          return _this.showSearchHighlights(_this.searchResults);
+        });
+      }
     };
 
     PdfService.prototype.loadPage = function(pageIndex) {
@@ -49818,10 +49808,6 @@ var Cache = function cacheCache(size) {
       return this.renderService.cancelJob(renderJob);
     };
 
-    PdfService.prototype.updateMatches = function(query, matches) {
-      return this.textService.updateMatches(query, matches);
-    };
-
     PdfService.prototype.loadAllText = function() {
       var allTextPromise, textPromises,
         _this = this;
@@ -49843,8 +49829,17 @@ var Cache = function cacheCache(size) {
     };
 
     PdfService.prototype.find = function(text) {
+      var findRequest;
       this.log.log('SVC: Find', text);
-      return this.textService.find(text);
+      findRequest = this.textService.find(text);
+      findRequest.then(this.showSearchHighlights);
+      return findRequest;
+    };
+
+    PdfService.prototype.showSearchHighlights = function(searchResults) {
+      this.searchResults = searchResults;
+      this.log.log('Show search highlights', this.searchResults);
+      return this.renderService.highlightText(this.searchResults.query, this.searchResults.matches);
     };
 
     PdfService.prototype.zoomIn = function() {
@@ -49857,10 +49852,11 @@ var Cache = function cacheCache(size) {
 
     PdfService.prototype.zoomOut = function() {
       this.log.log('SVC: Zoom Out', this.visibleLimits);
-      this.htmlUI.zoomOut();
-      if (this.visibleLimits) {
-        return this.setVisibleLimits(this.visibleLimits.first, this.visibleLimits.last);
-      }
+      return this.htmlUI.zoomOut();
+    };
+
+    PdfService.prototype.resetZoom = function() {
+      return this.htmlUI.resetZoom();
     };
 
     return PdfService;

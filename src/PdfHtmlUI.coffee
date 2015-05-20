@@ -229,7 +229,7 @@ class PdfHtmlUI
     @scrollChanged()
 
   resetZoom: () =>
-    @currentZoom = 1
+    @currentZoom = @defaultZoom
     @resizeContainers()
     @scrollChanged()
 

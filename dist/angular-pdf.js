@@ -48960,7 +48960,7 @@ var Cache = function cacheCache(size) {
     };
 
     PdfHtmlUI.prototype.resetZoom = function() {
-      this.currentZoom = 1;
+      this.currentZoom = this.defaultZoom;
       this.resizeContainers();
       return this.scrollChanged();
     };
@@ -49380,6 +49380,7 @@ var Cache = function cacheCache(size) {
       this.doSearch = __bind(this.doSearch, this);
       this.find = __bind(this.find, this);
       this.extractPageText = __bind(this.extractPageText, this);
+      this.loadAllText = __bind(this.loadAllText, this);
       this.isWaitingFor = __bind(this.isWaitingFor, this);
       this.normalize = __bind(this.normalize, this);
       this.clear = __bind(this.clear, this);
@@ -49406,6 +49407,26 @@ var Cache = function cacheCache(size) {
 
     PdfPageTextService.prototype.isWaitingFor = function(pdfPageProxy) {
       return this.pendingText[pdfPageProxy.pageIndex];
+    };
+
+    PdfPageTextService.prototype.loadAllText = function(pageProxies) {
+      var allTextPromise, d, textPromises,
+        _this = this;
+      if (!this.textContentReady) {
+        this.log.log('TEXT: load all text');
+        textPromises = _.map(pageProxies, function(page) {
+          return _this.extractPageText(page);
+        });
+        this.log.log('TEXT: Text promises', textPromises);
+        allTextPromise = this.$q.all(textPromises);
+        allTextPromise.then(this.textExtracted);
+        return allTextPromise;
+      } else {
+        d = this.$q.defer();
+        d.resolve();
+        return d.promise;
+        return this.log.info('TEXT: All text extracted');
+      }
     };
 
     PdfPageTextService.prototype.extractPageText = function(pdfPageProxy) {
@@ -49447,7 +49468,7 @@ var Cache = function cacheCache(size) {
             } else {
               _this.log.log('TEXT: Completed %s of %s', completedText, _this.totalPages);
             }
-            _this.log.log('TEXT: Resolve deferred');
+            _this.log.log('TEXT: Resolve deferred', deferred);
             deferred.resolve({
               text: textContent,
               page: pdfPageProxy
@@ -49462,6 +49483,12 @@ var Cache = function cacheCache(size) {
           });
           this.pendingText[pageIndex] = deferred.promise;
         }
+      } else {
+        this.log.log('Text already extracted');
+        deferred.resolve({
+          text: this.textContent[pageIndex],
+          page: pdfPageProxy
+        });
       }
       return deferred.promise;
     };
@@ -49480,7 +49507,11 @@ var Cache = function cacheCache(size) {
       this.log.log('TEXT: Do Search', query, this.pageContents);
       matches = [];
       results = [];
-      query = this.normalize(query.toLowerCase());
+      if (query) {
+        query = this.normalize(query.toLowerCase());
+      } else {
+        query = '';
+      }
       queryLen = query.length;
       if (queryLen === 0) {
         deferred.resolve({
@@ -49828,23 +49859,11 @@ var Cache = function cacheCache(size) {
     };
 
     PdfService.prototype.loadAllText = function() {
-      var allTextPromise, textPromises,
-        _this = this;
-      if (!this.textService.textContentReady) {
-        this.log.log('SVC: load all text');
-        textPromises = _.map(this.pageProxies, function(page) {
-          return _this.textService.extractPageText(page);
-        });
-        allTextPromise = this.$q.all(textPromises);
-        allTextPromise.then(this.textExtracted);
-        return allTextPromise;
-      } else {
-        return this.log.info('SVC: All text extracted');
-      }
+      return this.textService.loadAllText(this.pageProxies);
     };
 
     PdfService.prototype.textExtracted = function() {
-      return this.log.log('SVC: All text extracted');
+      return this.log.log('SVC: Text extraction complete');
     };
 
     PdfService.prototype.find = function(text) {

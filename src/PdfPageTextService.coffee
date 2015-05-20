@@ -45,6 +45,21 @@ class PdfPageTextService
   isWaitingFor: (pdfPageProxy) =>
     return @pendingText[pdfPageProxy.pageIndex]
 
+  loadAllText: (pageProxies) =>
+    if !@textContentReady
+      @log.log('TEXT: load all text')
+      textPromises = _.map pageProxies, (page) =>
+        @extractPageText(page)
+      @log.log('TEXT: Text promises',textPromises)
+      allTextPromise = @$q.all(textPromises)
+      allTextPromise.then @textExtracted
+      return allTextPromise
+    else
+      d = @$q.defer()
+      d.resolve()
+      return d.promise
+      @log.info('TEXT: All text extracted')
+
   # Extract text from a PdfPageProxy
   # returns Promise
   extractPageText: (pdfPageProxy) =>
@@ -60,7 +75,6 @@ class PdfPageTextService
         return @pendingText[pageIndex]
       else
         textPromise = pdfPageProxy.getTextContent()
-
         textPromise.then (textContent) =>
           @log.log('TEXT: Extracted page text %s %O', pageIndex,textContent)
           @textContent[pageIndex] = textContent
@@ -82,7 +96,7 @@ class PdfPageTextService
             @log.log('TEXT: Completed %s of %s', completedText, @totalPages)
 
 
-          @log.log('TEXT: Resolve deferred')
+          @log.log('TEXT: Resolve deferred', deferred)
 
           deferred.resolve({text:textContent, page:pdfPageProxy})
           return textContent
@@ -91,6 +105,10 @@ class PdfPageTextService
           deferred.reject({error:'Text extraction error',page:pdfPageProxy})
           @log.warn('TEXT: Text extraction error')
         @pendingText[pageIndex] = deferred.promise
+
+    else
+      @log.log('Text already extracted')
+      deferred.resolve({text:@textContent[pageIndex], page:pdfPageProxy})
 
     return deferred.promise
 
@@ -109,7 +127,11 @@ class PdfPageTextService
     # array of page results, where each entry is a list of strings
     results = []
 
-    query = @normalize(query.toLowerCase())
+    if query
+      query = @normalize(query.toLowerCase())
+    else
+      query = ''
+
     queryLen = query.length
 
     if (queryLen == 0)

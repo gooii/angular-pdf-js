@@ -211,18 +211,10 @@ class PdfService
     @renderService.cancelJob(renderJob)
 
   loadAllText: () =>
-    if !@textService.textContentReady
-      @log.log('SVC: load all text')
-      textPromises = _.map @pageProxies, (page) =>
-        @textService.extractPageText(page)
-      allTextPromise = @$q.all(textPromises)
-      allTextPromise.then @textExtracted
-      return allTextPromise
-    else
-      @log.info('SVC: All text extracted')
+    return @textService.loadAllText(@pageProxies)
 
   textExtracted: () =>
-    @log.log('SVC: All text extracted')
+    @log.log('SVC: Text extraction complete')
 
   find: (text) =>
     @log.log('SVC: Find',text)

@@ -49661,7 +49661,7 @@ var Cache = function cacheCache(size) {
     };
 
     PdfService.prototype.setVisibleLimits = function(firstPage, lastPage) {
-      var job, pageIndex, renderRequests, _i,
+      var allRequests, d, job, pageIndex, renderRequests, _i,
         _this = this;
       if (firstPage > this.pageProxies.length - 1) {
         firstPage = this.pageProxies.length - 1;
@@ -49679,10 +49679,18 @@ var Cache = function cacheCache(size) {
         job = this.renderWithText(this.pageProxies[pageIndex]);
         renderRequests.push(job.promise);
       }
-      if (this.searchResults) {
-        return this.$q.all(renderRequests).then(function() {
-          return _this.showSearchHighlights(_this.searchResults);
-        });
+      if (renderRequests.length) {
+        allRequests = this.$q.all(renderRequests);
+        if (this.searchResults) {
+          allRequests.then(function() {
+            return _this.showSearchHighlights(_this.searchResults);
+          });
+        }
+        return allRequests;
+      } else {
+        d = this.$q.defer();
+        d.resolve();
+        return d.promise;
       }
     };
 

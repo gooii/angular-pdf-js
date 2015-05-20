@@ -68,7 +68,7 @@ class PdfService
   showPage: (pageNumber) =>
     @log.log('SVC: Show Page',pageNumber)
     pageIndex = pageNumber - 1
-    @setVisibleLimits(pageIndex, pageIndex)
+    return @setVisibleLimits(pageIndex, pageIndex)
 
   scrollTo: (pageIndex) =>
     @log.log('SVC: Scroll To',pageIndex)
@@ -88,9 +88,19 @@ class PdfService
       job = @renderWithText(@pageProxies[pageIndex])
       renderRequests.push(job.promise)
 
-    if @searchResults
-      @$q.all(renderRequests).then () =>
-        @showSearchHighlights(@searchResults)
+    if renderRequests.length
+      allRequests = @$q.all(renderRequests)
+
+      if @searchResults
+        allRequests.then () =>
+          @showSearchHighlights(@searchResults)
+
+      return allRequests
+    else
+      # No render requests so return an empty promise.
+      d = @$q.defer()
+      d.resolve()
+      return d.promise
 
   # Load a page by page number (1 based)
   # return Promise which resolves when the page has loaded (but not rendered)

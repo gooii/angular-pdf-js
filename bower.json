@@ -1,6 +1,6 @@
 {
   "name": "angular-pdf-js",
-  "version": "0.0.24",
+  "version": "0.0.25",
   "main":"dist/angular-pdf.js",
   "ignore":["docs","grunt","src","test",".editorconfig",".gitattributes",".gitignore",".jshintrc","Gruntfile.js","docker-compose.yml"],
   "dependencies": {

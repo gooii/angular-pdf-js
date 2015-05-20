@@ -68,7 +68,7 @@ class PdfPageRenderService
     @busy = false
     @pendingPages = []
     @queue = []
-    @textQueue = []
+    @textQueue = {}
     @cache = []
     @cacheWithoutText = []
 
@@ -85,10 +85,17 @@ class PdfPageRenderService
 
     # Check if job is in the queue
     if @queue.length > 0
+      @log.log('Render: checking queue',@queue, _.map(@queue,'page.pageIndex'))
+      jobInQueue = null
       _.forEach @queue, (job) =>
         if (job.page == page) && (job.context.viewport.scale == renderConfig.viewport.scale)
           @log.log('Render: Matching job found in queue')
-          return job
+          jobInQueue = job
+          return false
+        else
+          return true
+      if jobInQueue
+        return jobInQueue
 
     # Check if job is currently being rendered
     if @currentJob && (@currentJob.page == page) && (@currentJob.context.viewport.scale == renderConfig.viewport.scale)
@@ -103,7 +110,7 @@ class PdfPageRenderService
       # Check if the job is already waiting for text content
       job = @textQueue[page.pageIndex]
       if job && (job.page == page) && (job.context.viewport.scale == renderConfig.viewport.scale)
-        @log.log('Render: Matching job found in text queue')
+        @log.log('Render: Matching job found in text queue',@textQueue)
         return job
 
       # Check if the text content has been requested externally
@@ -146,7 +153,11 @@ class PdfPageRenderService
     # and one for pages without (i.e. thumbnails)
     cache = if renderConfig.text then @cache else @cacheWithoutText
 
-    @log.log('Render: Checking cache',cache)
+    if renderConfig.text
+      @log.log('Render: Checking text cache',cache)
+    else
+      @log.log('Render: Checking cache',cache)
+
     if cache[page.pageIndex]
       cachedPage = cache[page.pageIndex]
       @log.info('Render: Page exists in cache.', cachedPage)
@@ -249,7 +260,7 @@ class PdfPageRenderService
   finishJob: () =>
     @busy = false
     if @queue.length > 0
-      @log.log('Render: Queue is not empty : %s', @queue.length)
+      @log.log('Render: Queue is not empty : %s', @queue.length, _.map(@queue,'page.pageIndex'))
       @$timeout @doRenderJob, 10
 
     completed = @currentJob

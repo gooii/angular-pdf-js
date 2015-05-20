@@ -190,7 +190,7 @@ class PdfService
     @log.log('SVC: Render with text %s',pdfPage.pageIndex)
     renderConfig = @htmlUI.getRenderConfigForPage(pdfPage)
     renderJob = @renderService.renderPage(pdfPage, renderConfig)
-    renderJob.promise.then @removeLoadingIcon
+    #renderJob.promise.then @removeLoadingIcon
     return renderJob
 
   removeLoadingIcon: (renderJob) =>

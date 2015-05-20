@@ -49092,13 +49092,13 @@ var Cache = function cacheCache(size) {
       this.busy = false;
       this.pendingPages = [];
       this.queue = [];
-      this.textQueue = [];
+      this.textQueue = {};
       this.cache = [];
       return this.cacheWithoutText = [];
     };
 
     PdfPageRenderService.prototype.renderPage = function(page, renderConfig) {
-      var cacheItem, job, renderJob, t, te, textPromise,
+      var cacheItem, job, jobInQueue, renderJob, t, te, textPromise,
         _this = this;
       this.log.log('Render: Rendering page %O with config %O', page, renderConfig);
       cacheItem = this.checkCache(page, renderConfig);
@@ -49106,12 +49106,20 @@ var Cache = function cacheCache(size) {
         return cacheItem;
       }
       if (this.queue.length > 0) {
+        this.log.log('Render: checking queue', this.queue, _.map(this.queue, 'page.pageIndex'));
+        jobInQueue = null;
         _.forEach(this.queue, function(job) {
           if ((job.page === page) && (job.context.viewport.scale === renderConfig.viewport.scale)) {
             _this.log.log('Render: Matching job found in queue');
-            return job;
+            jobInQueue = job;
+            return false;
+          } else {
+            return true;
           }
         });
+        if (jobInQueue) {
+          return jobInQueue;
+        }
       }
       if (this.currentJob && (this.currentJob.page === page) && (this.currentJob.context.viewport.scale === renderConfig.viewport.scale)) {
         this.log.log('Render: Current job matches request');
@@ -49121,7 +49129,7 @@ var Cache = function cacheCache(size) {
       if (renderConfig.text) {
         job = this.textQueue[page.pageIndex];
         if (job && (job.page === page) && (job.context.viewport.scale === renderConfig.viewport.scale)) {
-          this.log.log('Render: Matching job found in text queue');
+          this.log.log('Render: Matching job found in text queue', this.textQueue);
           return job;
         }
         textPromise = this.textService.isWaitingFor(page);
@@ -49158,7 +49166,11 @@ var Cache = function cacheCache(size) {
     PdfPageRenderService.prototype.checkCache = function(page, renderConfig) {
       var cachedPage;
       cache = renderConfig.text ? this.cache : this.cacheWithoutText;
-      this.log.log('Render: Checking cache', cache);
+      if (renderConfig.text) {
+        this.log.log('Render: Checking text cache', cache);
+      } else {
+        this.log.log('Render: Checking cache', cache);
+      }
       if (cache[page.pageIndex]) {
         cachedPage = cache[page.pageIndex];
         this.log.info('Render: Page exists in cache.', cachedPage);
@@ -49259,7 +49271,7 @@ var Cache = function cacheCache(size) {
       var completed;
       this.busy = false;
       if (this.queue.length > 0) {
-        this.log.log('Render: Queue is not empty : %s', this.queue.length);
+        this.log.log('Render: Queue is not empty : %s', this.queue.length, _.map(this.queue, 'page.pageIndex'));
         this.$timeout(this.doRenderJob, 10);
       }
       completed = this.currentJob;
@@ -49795,7 +49807,6 @@ var Cache = function cacheCache(size) {
       this.log.log('SVC: Render with text %s', pdfPage.pageIndex);
       renderConfig = this.htmlUI.getRenderConfigForPage(pdfPage);
       renderJob = this.renderService.renderPage(pdfPage, renderConfig);
-      renderJob.promise.then(this.removeLoadingIcon);
       return renderJob;
     };
 

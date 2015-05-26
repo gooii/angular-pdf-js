@@ -48801,7 +48801,7 @@ var Cache = function cacheCache(size) {
     };
 
     PdfHtmlUI.prototype.getRenderConfigForPage = function(pdfPage) {
-      var container;
+      var container, newZoom, viewport;
       this.log.log('UI: Get render config for page %O', pdfPage, pdfPage.pageNumber);
       if (this.pageContainers.length === 0) {
         this.log.log('UI: No Containers creating views');
@@ -48813,7 +48813,13 @@ var Cache = function cacheCache(size) {
         this.log.error('UI: Container not found for page', pdfPage.pageNumber);
         throw "Container not found";
       }
-      container.viewport = pdfPage.getViewport(this.currentZoom);
+      viewport = pdfPage.getViewport(this.currentZoom);
+      if (Math.floor(viewport.width) > container.canvas.width) {
+        this.log.warn('Viewport width is bigger than canvas', viewport.width, container.canvas.width);
+        newZoom = this.currentZoom * (container.canvas.width / viewport.width);
+        viewport = pdfPage.getViewport(newZoom);
+      }
+      container.viewport = viewport;
       return container;
     };
 

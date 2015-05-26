@@ -79,7 +79,14 @@ class PdfHtmlUI
       @log.error('UI: Container not found for page', pdfPage.pageNumber)
       throw "Container not found"
 
-    container.viewport = pdfPage.getViewport(@currentZoom)
+    viewport = pdfPage.getViewport(@currentZoom)
+    # Compare viewport width with canvas width
+    if Math.floor(viewport.width) > container.canvas.width
+      @log.warn('Viewport width is bigger than canvas', viewport.width, container.canvas.width)
+      newZoom = @currentZoom * (container.canvas.width / viewport.width)
+      viewport = pdfPage.getViewport(newZoom)
+
+    container.viewport = viewport
     return container
 
   createViews: (pdfPageProxy) =>

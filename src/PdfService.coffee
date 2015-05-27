@@ -108,6 +108,7 @@ class PdfService
     @log.log('SVC: Load Page %s',pageIndex)
     if @pageInfos[pageIndex].hasData
       @log.log('SVC: Page already has data. Scroll into view?')
+      return @$q.when(@pageProxies[pageIndex])
     else
       return @fetchPageFromPdf(pageIndex)
 
@@ -146,7 +147,13 @@ class PdfService
   pageLoaded: (page) =>
     @log.log('SVC: Page Loaded %s %O', page.pageIndex, page)
 
-    @pageInfos[page.pageIndex].hasData = true
+    info = @pageInfos[page.pageIndex]
+    if not info
+      @log.error('Page info is null at index',page.pageIndex)
+      @log.error('Page infos :',@pageInfos)
+    else
+      @pageInfos[page.pageIndex].hasData = true
+
     @pageProxies[page.pageIndex] = page
     if @pageProxies.length == @pageInfos.length
       @log.info('SVC: All pages ready')
@@ -226,15 +233,15 @@ class PdfService
     @log.log('Show search highlights',@searchResults)
     @renderService.highlightText(@searchResults.query, @searchResults.matches)
 
-  zoomIn: () =>
+  zoomIn: (amount) =>
     @log.log('SVC: Zoom In', @visibleLimits)
-    @htmlUI.zoomIn()
+    @htmlUI.zoomIn(amount)
     if @visibleLimits
       @setVisibleLimits(@visibleLimits.first,@visibleLimits.last)
 
-  zoomOut: () =>
+  zoomOut: (amount) =>
     @log.log('SVC: Zoom Out', @visibleLimits)
-    @htmlUI.zoomOut()
+    @htmlUI.zoomOut(amount)
 #    if @visibleLimits
 #      @setVisibleLimits(@visibleLimits.first,@visibleLimits.last)
 

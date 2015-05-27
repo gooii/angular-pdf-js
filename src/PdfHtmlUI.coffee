@@ -221,13 +221,15 @@ class PdfHtmlUI
     viewAreaElement.on('scroll', debounceScroll)
     return state
 
-  zoomIn: () =>
-    @currentZoom += 0.1
+  zoomIn: (amount) =>
+    amount = amount || 0.1
+    @currentZoom += amount
     @log.log('TEXT: Zoom In',@currentZoom)
     @resizeContainers()
 
   zoomOut: () =>
-    @currentZoom -= 0.1
+    amount = amount || 0.1
+    @currentZoom -= amount
     @log.log('TEXT: Zoom Out',@currentZoom)
 
     if @currentZoom < 0.1

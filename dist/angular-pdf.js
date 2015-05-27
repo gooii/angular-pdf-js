@@ -48949,14 +48949,17 @@ var Cache = function cacheCache(size) {
       return state;
     };
 
-    PdfHtmlUI.prototype.zoomIn = function() {
-      this.currentZoom += 0.1;
+    PdfHtmlUI.prototype.zoomIn = function(amount) {
+      amount = amount || 0.1;
+      this.currentZoom += amount;
       this.log.log('TEXT: Zoom In', this.currentZoom);
       return this.resizeContainers();
     };
 
     PdfHtmlUI.prototype.zoomOut = function() {
-      this.currentZoom -= 0.1;
+      var amount;
+      amount = amount || 0.1;
+      this.currentZoom -= amount;
       this.log.log('TEXT: Zoom Out', this.currentZoom);
       if (this.currentZoom < 0.1) {
         this.currentZoom = 0.1;
@@ -49734,7 +49737,8 @@ var Cache = function cacheCache(size) {
     PdfService.prototype.loadPage = function(pageIndex) {
       this.log.log('SVC: Load Page %s', pageIndex);
       if (this.pageInfos[pageIndex].hasData) {
-        return this.log.log('SVC: Page already has data. Scroll into view?');
+        this.log.log('SVC: Page already has data. Scroll into view?');
+        return this.$q.when(this.pageProxies[pageIndex]);
       } else {
         return this.fetchPageFromPdf(pageIndex);
       }
@@ -49778,9 +49782,15 @@ var Cache = function cacheCache(size) {
     };
 
     PdfService.prototype.pageLoaded = function(page) {
-      var renderJob;
+      var info, renderJob;
       this.log.log('SVC: Page Loaded %s %O', page.pageIndex, page);
-      this.pageInfos[page.pageIndex].hasData = true;
+      info = this.pageInfos[page.pageIndex];
+      if (!info) {
+        this.log.error('Page info is null at index', page.pageIndex);
+        this.log.error('Page infos :', this.pageInfos);
+      } else {
+        this.pageInfos[page.pageIndex].hasData = true;
+      }
       this.pageProxies[page.pageIndex] = page;
       if (this.pageProxies.length === this.pageInfos.length) {
         this.log.info('SVC: All pages ready');
@@ -49886,17 +49896,17 @@ var Cache = function cacheCache(size) {
       return this.renderService.highlightText(this.searchResults.query, this.searchResults.matches);
     };
 
-    PdfService.prototype.zoomIn = function() {
+    PdfService.prototype.zoomIn = function(amount) {
       this.log.log('SVC: Zoom In', this.visibleLimits);
-      this.htmlUI.zoomIn();
+      this.htmlUI.zoomIn(amount);
       if (this.visibleLimits) {
         return this.setVisibleLimits(this.visibleLimits.first, this.visibleLimits.last);
       }
     };
 
-    PdfService.prototype.zoomOut = function() {
+    PdfService.prototype.zoomOut = function(amount) {
       this.log.log('SVC: Zoom Out', this.visibleLimits);
-      return this.htmlUI.zoomOut();
+      return this.htmlUI.zoomOut(amount);
     };
 
     PdfService.prototype.resetZoom = function() {

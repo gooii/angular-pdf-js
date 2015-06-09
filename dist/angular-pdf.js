@@ -447,20 +447,10 @@ if (typeof PDFJS === 'undefined') {
 
 // Checks if navigator.language is supported
 (function checkNavigatorLanguage() {
-  if ('language' in navigator &&
-      /^[a-z]+(-[A-Z]+)?$/.test(navigator.language)) {
+  if ('language' in navigator) {
     return;
   }
-  function formatLocale(locale) {
-    var split = locale.split(/[-_]/);
-    split[0] = split[0].toLowerCase();
-    if (split.length > 1) {
-      split[1] = split[1].toUpperCase();
-    }
-    return split.join('-');
-  }
-  var language = navigator.language || navigator.userLanguage || 'en-US';
-  PDFJS.locale = formatLocale(language);
+  PDFJS.locale = navigator.userLanguage || 'en-US';
 })();
 
 (function checkRangeRequests() {
@@ -479,7 +469,10 @@ if (typeof PDFJS === 'undefined') {
   var regex = /Android\s[0-2][^\d]/;
   var isOldAndroid = regex.test(navigator.userAgent);
 
-  if (isSafari || isOldAndroid) {
+  // Range requests are broken in Chrome 39 and 40, https://crbug.com/442318
+  var isChromeWithRangeBug = /Chrome\/(39|40)\./.test(navigator.userAgent);
+
+  if (isSafari || isOldAndroid || isChromeWithRangeBug) {
     PDFJS.disableRange = true;
     PDFJS.disableStream = true;
   }
@@ -572,6 +565,16 @@ if (typeof PDFJS === 'undefined') {
     PDFJS.maxCanvasPixels = 5242880;
   }
 })();
+
+// Disable fullscreen support for certain problematic configurations.
+// Support: IE11+ (when embedded).
+(function checkFullscreenSupport() {
+  var isEmbeddedIE = (navigator.userAgent.indexOf('Trident') >= 0 &&
+                      window.parent !== window);
+  if (isEmbeddedIE) {
+    PDFJS.disableFullscreen = true;
+  }
+})();
 ;/* -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set shiftwidth=2 tabstop=2 autoindent cindent expandtab: */
 /* Copyright 2013 Mozilla Foundation
@@ -592,12 +595,8 @@ if (typeof PDFJS === 'undefined') {
 
 'use strict';
 (function mozPrintCallbackPolyfillClosure() {
-  console.log('mozPrintCallbackPolyfillClosure');
   if ('mozPrintCallback' in document.createElement('canvas')) {
-    //console.log('Found print callback in canvas');
     return;
-  } else {
-    //console.log('Setting up printing callback')
   }
   // Cause positive result on feature-detection:
   HTMLCanvasElement.prototype.mozPrintCallback = undefined;
@@ -607,18 +606,15 @@ if (typeof PDFJS === 'undefined') {
 
   var print = window.print;
   window.print = function print() {
-    console.log('Window Print');
     if (canvases) {
       console.warn('Ignored window.print() because of a pending print job.');
       return;
     }
     try {
-      console.log('Sending beforeprint event');
       dispatchEvent('beforeprint');
     } finally {
       canvases = document.querySelectorAll('canvas');
       index = -1;
-      //console.log('Starting print');
       next();
     }
   };
@@ -630,9 +626,7 @@ if (typeof PDFJS === 'undefined') {
   }
 
   function next() {
-    //console.log('Print next');
     if (!canvases) {
-      //console.log('No canvases to print');
       return; // Print task cancelled by user (state reset in abort())
     }
 
@@ -640,20 +634,16 @@ if (typeof PDFJS === 'undefined') {
     if (++index < canvases.length) {
       var canvas = canvases[index];
       if (typeof canvas.mozPrintCallback === 'function') {
-        //console.log('Canvas has print callback');
         canvas.mozPrintCallback({
           context: canvas.getContext('2d'),
           abort: abort,
           done: next
         });
       } else {
-        //console.log('Canvas does not have print callback');
         next();
       }
     } else {
-      //console.log('Callbacks complete, printing document');
       renderProgress();
-      //console.log('Calling print %O %O', print, window);
       print.call(window);
       setTimeout(abort, 20); // Tidy-up
     }
@@ -669,7 +659,7 @@ if (typeof PDFJS === 'undefined') {
 
   function renderProgress() {
     var progressContainer = document.getElementById('mozPrintCallback-shim');
-    if (canvases) {
+    if (canvases && canvases.length) {
       var progress = Math.round(100 * index / canvases.length);
       var progressBar = progressContainer.querySelector('progress');
       var progressPerc = progressContainer.querySelector('.relative-progress');
@@ -753,8 +743,8 @@ if (typeof PDFJS === 'undefined') {
   (typeof window !== 'undefined' ? window : this).PDFJS = {};
 }
 
-PDFJS.version = '1.1.63';
-PDFJS.build = '63aaf1b';
+PDFJS.version = '1.1.191';
+PDFJS.build = 'f943b29';
 
 (function pdfjsWrapper() {
   // Use strict in our context only - users might not want it
@@ -1706,6 +1696,10 @@ function stringToPDFString(str) {
 
 function stringToUTF8String(str) {
   return decodeURIComponent(escape(str));
+}
+
+function utf8StringToString(str) {
+  return unescape(encodeURIComponent(str));
 }
 
 function isEmptyObj(obj) {
@@ -3060,6 +3054,7 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
                                                       this.commonObjs,
                                                       intentState.operatorList,
                                                       this.pageNumber);
+      internalRenderTask.useRequestAnimationFrame = renderingIntent !== 'print';
       if (!intentState.renderTasks) {
         intentState.renderTasks = [];
       }
@@ -3875,6 +3870,7 @@ var InternalRenderTask = (function InternalRenderTaskClosure() {
     this.running = false;
     this.graphicsReadyCallback = null;
     this.graphicsReady = false;
+    this.useRequestAnimationFrame = false;
     this.cancelled = false;
     this.capability = createPromiseCapability();
     this.task = new RenderTask(this);
@@ -3948,7 +3944,11 @@ var InternalRenderTask = (function InternalRenderTaskClosure() {
     },
 
     _scheduleNext: function InternalRenderTask__scheduleNext() {
-      window.requestAnimationFrame(this._nextBound);
+      if (this.useRequestAnimationFrame) {
+        window.requestAnimationFrame(this._nextBound);
+      } else {
+        Promise.resolve(undefined).then(this._nextBound);
+      }
     },
 
     _next: function InternalRenderTask__next() {
@@ -4080,11 +4080,8 @@ function createScratchCanvas(width, height) {
 }
 
 function addContextCurrentTransform(ctx) {
-  // If the context doesn't expose a `mozCurrentTransform`, add a JS based on.
+  // If the context doesn't expose a `mozCurrentTransform`, add a JS based one.
   if (!ctx.mozCurrentTransform) {
-    // Store the original context
-    ctx._scaleX = ctx._scaleX || 1.0;
-    ctx._scaleY = ctx._scaleY || 1.0;
     ctx._originalSave = ctx.save;
     ctx._originalRestore = ctx.restore;
     ctx._originalRotate = ctx.rotate;
@@ -4093,7 +4090,7 @@ function addContextCurrentTransform(ctx) {
     ctx._originalTransform = ctx.transform;
     ctx._originalSetTransform = ctx.setTransform;
 
-    ctx._transformMatrix = [ctx._scaleX, 0, 0, ctx._scaleY, 0, 0];
+    ctx._transformMatrix = ctx._transformMatrix || [1, 0, 0, 1, 0, 0];
     ctx._transformStack = [];
 
     Object.defineProperty(ctx, 'mozCurrentTransform', {
@@ -4469,6 +4466,8 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
     this.smaskCounter = 0;
     this.tempSMask = null;
     if (canvasCtx) {
+      // NOTE: if mozCurrentTransform is polyfilled, then the current state of
+      // the transformation must already be set in canvasCtx._transformMatrix.
       addContextCurrentTransform(canvasCtx);
     }
     this.cachedGetSinglePixelWidth = null;
@@ -8806,8 +8805,8 @@ if (typeof PDFJS === 'undefined') {
   (typeof window !== 'undefined' ? window : this).PDFJS = {};
 }
 
-PDFJS.version = '1.1.63';
-PDFJS.build = '63aaf1b';
+PDFJS.version = '1.1.191';
+PDFJS.build = 'f943b29';
 
 (function pdfjsWrapper() {
   // Use strict in our context only - users might not want it
@@ -9759,6 +9758,10 @@ function stringToPDFString(str) {
 
 function stringToUTF8String(str) {
   return decodeURIComponent(escape(str));
+}
+
+function utf8StringToString(str) {
+  return unescape(encodeURIComponent(str));
 }
 
 function isEmptyObj(obj) {
@@ -11422,17 +11425,33 @@ var Page = (function PageClosure() {
       return this.pageDict.get(key);
     },
 
-    getInheritedPageProp: function Page_inheritPageProp(key) {
-      var dict = this.pageDict;
-      var value = dict.get(key);
-      while (value === undefined) {
-        dict = dict.get('Parent');
-        if (!dict) {
+    getInheritedPageProp: function Page_getInheritedPageProp(key) {
+      var dict = this.pageDict, valueArray = null, loopCount = 0;
+      var MAX_LOOP_COUNT = 100;
+      // Always walk up the entire parent chain, to be able to find
+      // e.g. \Resources placed on multiple levels of the tree.
+      while (dict) {
+        var value = dict.get(key);
+        if (value) {
+          if (!valueArray) {
+            valueArray = [];
+          }
+          valueArray.push(value);
+        }
+        if (++loopCount > MAX_LOOP_COUNT) {
+          warn('Page_getInheritedPageProp: maximum loop count exceeded.');
           break;
         }
-        value = dict.get(key);
+        dict = dict.get('Parent');
       }
-      return value;
+      if (!valueArray) {
+        return Dict.empty;
+      }
+      if (valueArray.length === 1 || !isDict(valueArray[0]) ||
+          loopCount > MAX_LOOP_COUNT) {
+        return valueArray[0];
+      }
+      return Dict.merge(this.xref, valueArray);
     },
 
     get content() {
@@ -11440,14 +11459,10 @@ var Page = (function PageClosure() {
     },
 
     get resources() {
-      var value = this.getInheritedPageProp('Resources');
       // For robustness: The spec states that a \Resources entry has to be
-      // present, but can be empty. Some document omit it still. In this case
-      // return an empty dictionary:
-      if (value === undefined) {
-        value = Dict.empty;
-      }
-      return shadow(this, 'resources', value);
+      // present, but can be empty. Some document omit it still, in this case
+      // we return an empty dictionary.
+      return shadow(this, 'resources', this.getInheritedPageProp('Resources'));
     },
 
     get mediaBox() {
@@ -11720,6 +11735,10 @@ var PDFDocument = (function PDFDocumentClosure() {
   PDFDocument.prototype = {
     parse: function PDFDocument_parse(recoveryMode) {
       this.setup(recoveryMode);
+      var version = this.catalog.catDict.get('Version');
+      if (isName(version)) {
+        this.pdfFormatVersion = version.name;
+      }
       try {
         // checking if AcroForm is present
         this.acroForm = this.catalog.catDict.get('AcroForm');
@@ -11821,8 +11840,10 @@ var PDFDocument = (function PDFDocumentClosure() {
           }
           version += String.fromCharCode(ch);
         }
-        // removing "%PDF-"-prefix
-        this.pdfFormatVersion = version.substring(5);
+        if (!this.pdfFormatVersion) {
+          // removing "%PDF-"-prefix
+          this.pdfFormatVersion = version.substring(5);
+        }
         return;
       }
       // May not be a PDF file, continue anyway.
@@ -12078,6 +12099,10 @@ var Dict = (function DictClosure() {
       return all;
     },
 
+    getKeys: function Dict_getKeys() {
+      return Object.keys(this.map);
+    },
+
     set: function Dict_set(key, value) {
       this.map[key] = value;
     },
@@ -12094,6 +12119,24 @@ var Dict = (function DictClosure() {
   };
 
   Dict.empty = new Dict(null);
+
+  Dict.merge = function Dict_merge(xref, dictArray) {
+    var mergedDict = new Dict(xref);
+
+    for (var i = 0, ii = dictArray.length; i < ii; i++) {
+      var dict = dictArray[i];
+      if (!isDict(dict)) {
+        continue;
+      }
+      for (var keyName in dict.map) {
+        if (mergedDict.map[keyName]) {
+          continue;
+        }
+        mergedDict.map[keyName] = dict.map[keyName];
+      }
+    }
+    return mergedDict;
+  };
 
   return Dict;
 })();
@@ -12483,6 +12526,7 @@ var Catalog = (function CatalogClosure() {
       var nodesToVisit = [this.catDict.getRaw('Pages')];
       var currentPageIndex = 0;
       var xref = this.xref;
+      var checkAllKids = false;
 
       function next() {
         while (nodesToVisit.length) {
@@ -12490,7 +12534,7 @@ var Catalog = (function CatalogClosure() {
 
           if (isRef(currentNode)) {
             xref.fetchAsync(currentNode).then(function (obj) {
-              if ((isDict(obj, 'Page') || (isDict(obj) && !obj.has('Kids')))) {
+              if (isDict(obj, 'Page') || (isDict(obj) && !obj.has('Kids'))) {
                 if (pageIndex === currentPageIndex) {
                   capability.resolve([obj, currentNode]);
                 } else {
@@ -12505,12 +12549,17 @@ var Catalog = (function CatalogClosure() {
             return;
           }
 
-          // must be a child page dictionary
+          // Must be a child page dictionary.
           assert(
             isDict(currentNode),
             'page dictionary kid reference points to wrong type of object'
           );
           var count = currentNode.get('Count');
+          // If the current node doesn't have any children, avoid getting stuck
+          // in an empty node further down in the tree (see issue5644.pdf).
+          if (count === 0) {
+            checkAllKids = true;
+          }
           // Skip nodes where the page can't be.
           if (currentPageIndex + count <= pageIndex) {
             currentPageIndex += count;
@@ -12519,7 +12568,7 @@ var Catalog = (function CatalogClosure() {
 
           var kids = currentNode.get('Kids');
           assert(isArray(kids), 'page dictionary kids object is not an array');
-          if (count === kids.length) {
+          if (!checkAllKids && count === kids.length) {
             // Nodes that don't have the page have been skipped and this is the
             // bottom of the tree which means the page requested must be a
             // descendant of this pages node. Ideally we would just resolve the
@@ -12937,12 +12986,13 @@ var XRef = (function XRefClosure() {
           trailers.push(position);
           position += skipUntil(buffer, position, startxrefBytes);
         } else if ((m = /^(\d+)\s+(\d+)\s+obj\b/.exec(token))) {
-          this.entries[m[1]] = {
-            offset: position,
-            gen: m[2] | 0,
-            uncompressed: true
-          };
-
+          if (typeof this.entries[m[1]] === 'undefined') {
+            this.entries[m[1]] = {
+              offset: position,
+              gen: m[2] | 0,
+              uncompressed: true
+            };
+          }
           var contentLength = skipUntil(buffer, position, endobjBytes) + 7;
           var content = buffer.subarray(position, position + contentLength);
 
@@ -14165,7 +14215,15 @@ var LinkAnnotation = (function LinkAnnotationClosure() {
         if (!isValidUrl(url, false)) {
           url = '';
         }
-        data.url = url;
+        // According to ISO 32000-1:2008, section 12.6.4.7, 
+        // URI should to be encoded in 7-bit ASCII.
+        // Some bad PDFs may have URIs in UTF-8 encoding, see Bugzilla 1122280.
+        try {
+          data.url = stringToUTF8String(url);
+        } catch (e) {
+          // Fall back to a simple copy.
+          data.url = url;
+        }
       } else if (linkType === 'GoTo') {
         data.dest = action.get('D');
       } else if (linkType === 'GoToR') {
@@ -15563,7 +15621,7 @@ var ColorSpace = (function ColorSpaceClosure() {
           error('unrecognized colorspace ' + mode);
       }
     } else if (isArray(cs)) {
-      mode = cs[0].name;
+      mode = xref.fetchIfRef(cs[0]).name;
       this.mode = mode;
       var numComps, params;
 
@@ -15596,7 +15654,7 @@ var ColorSpace = (function ColorSpaceClosure() {
           }
           break;
         case 'Pattern':
-          var basePatternCS = cs[1];
+          var basePatternCS = xref.fetchIfRef(cs[1]) || null;
           if (basePatternCS) {
             basePatternCS = ColorSpace.parseToIR(basePatternCS, xref, res);
           }
@@ -18448,6 +18506,14 @@ var CipherTransformFactory = (function CipherTransformFactoryClosure() {
     var fileIdBytes = stringToBytes(fileId);
     var passwordBytes;
     if (password) {
+      if (revision === 6) {
+        try {
+          password = utf8StringToString(password);
+        } catch (ex) {
+          warn('CipherTransformFactory: ' +
+               'Unable to convert UTF8 encoded password.');
+        }
+      }
       passwordBytes = stringToBytes(password);
     }
 
@@ -18552,7 +18618,7 @@ var CipherTransformFactory = (function CipherTransformFactoryClosure() {
 
   CipherTransformFactory.prototype = {
     createCipherTransform:
-      function CipherTransformFactory_createCipherTransform(num, gen) {
+        function CipherTransformFactory_createCipherTransform(num, gen) {
       if (this.algorithm === 4 || this.algorithm === 5) {
         return new CipherTransform(
           buildCipherConstructor(this.cf, this.stmf,
@@ -20286,6 +20352,17 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
           var tsm = [textState.fontSize * textState.textHScale, 0,
                      0, textState.fontSize,
                      0, textState.textRise];
+
+          if (font.isType3Font &&
+              textState.fontMatrix !== FONT_IDENTITY_MATRIX &&
+              textState.fontSize === 1) {
+            var glyphHeight = font.bbox[3] - font.bbox[1];
+            if (glyphHeight > 0) {
+              glyphHeight = glyphHeight * textState.fontMatrix[3];
+              tsm[3] *= glyphHeight;
+            }
+          }
+
           var trm = textChunk.transform = Util.transform(textState.ctm,
                                     Util.transform(textState.textMatrix, tsm));
           if (!font.vertical) {
@@ -20339,16 +20416,23 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
           // var x = pt[0];
           // var y = pt[1];
 
+          var charSpacing = 0;
+          if (textChunk.str.length > 0) {
+            // Apply char spacing only when there are chars.
+            // As a result there is only spacing between glyphs.
+            charSpacing = textState.charSpacing;
+          }
+
           var tx = 0;
           var ty = 0;
           if (!font.vertical) {
             var w0 = glyphWidth * textState.fontMatrix[0];
-            tx = (w0 * textState.fontSize + textState.charSpacing) *
+            tx = (w0 * textState.fontSize + charSpacing) *
                  textState.textHScale;
             width += tx;
           } else {
             var w1 = glyphWidth * textState.fontMatrix[0];
-            ty = w1 * textState.fontSize + textState.charSpacing;
+            ty = w1 * textState.fontSize + charSpacing;
             height += ty;
           }
           textState.translateTextMatrix(tx, ty);
@@ -20614,8 +20698,13 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
               var data = diffEncoding[j];
               if (isNum(data)) {
                 index = data;
-              } else {
+              } else if (isName(data)) {
                 differences[index++] = data.name;
+              } else if (isRef(data)) {
+                diffEncoding[j--] = xref.fetch(data);
+                continue;
+              } else {
+                error('Invalid entry in \'Differences\' array: ' + data);
               }
             }
           }
@@ -20669,7 +20758,11 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         return new ToUnicodeMap(cmap.getMap());
       } else if (isStream(cmapObj)) {
         cmap = CMapFactory.create(cmapObj,
-          { url: PDFJS.cMapUrl, packed: PDFJS.cMapPacked }, null).getMap();
+          { url: PDFJS.cMapUrl, packed: PDFJS.cMapPacked }, null);
+        if (cmap instanceof IdentityCMap) {
+          return new IdentityToUnicodeMap(0, 0xFFFF);
+        }
+        cmap = cmap.getMap();
         // Convert UTF-16BE
         // NOTE: cmap can be a sparse array, so use forEach instead of for(;;)
         // to iterate over all keys.
@@ -20897,6 +20990,21 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
           hash.update(encoding.name);
         } else if (isRef(encoding)) {
           hash.update(encoding.num + '_' + encoding.gen);
+        } else if (isDict(encoding)) {
+          var keys = encoding.getKeys();
+          for (var i = 0, ii = keys.length; i < ii; i++) {
+            var entry = encoding.getRaw(keys[i]);
+            if (isName(entry)) {
+              hash.update(entry.name);
+            } else if (isRef(entry)) {
+              hash.update(entry.num + '_' + entry.gen);
+            } else if (isArray(entry)) { // 'Differences' entry.
+              // Ideally we should check the contents of the array, but to avoid
+              // parsing it here and then again in |extractDataStructures|,
+              // we only use the array length for now (fixes bug1157493.pdf).
+              hash.update(entry.length.toString());
+            }
+          }
         }
 
         var toUnicode = dict.get('ToUnicode') || baseDict.get('ToUnicode');
@@ -20945,6 +21053,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
           // is a tagged pdf. Create a barbebones one to get by.
           descriptor = new Dict(null);
           descriptor.set('FontName', Name.get(type));
+          descriptor.set('FontBBox', dict.get('FontBBox'));
         } else {
           // Before PDF 1.5 if the font was one of the base 14 fonts, having a
           // FontDescriptor was not required.
@@ -22164,6 +22273,7 @@ var CMap = (function CMapClosure() {
     // - bf chars are variable-length byte sequences, stored as strings, with
     //   one byte per character.
     this._map = [];
+    this.name = '';
     this.vertical = false;
     this.useCMap = null;
     this.builtInCMap = builtInCMap;
@@ -22263,13 +22373,28 @@ var CMap = (function CMapClosure() {
       }
       out.charcode = 0;
       out.length = 1;
+    },
+
+    get isIdentityCMap() {
+      if (!(this.name === 'Identity-H' || this.name === 'Identity-V')) {
+        return false;
+      }
+      if (this._map.length !== 0x10000) {
+        return false;
+      }
+      for (var i = 0; i < 0x10000; i++) {
+        if (this._map[i] !== i) {
+          return false;
+        }
+      }
+      return true;
     }
   };
   return CMap;
 })();
 
 // A special case of CMap, where the _map array implicitly has a length of
-// 65535 and each element is equal to its index.
+// 65536 and each element is equal to its index.
 var IdentityCMap = (function IdentityCMapClosure() {
   function IdentityCMap(vertical, n) {
     CMap.call(this);
@@ -22324,7 +22449,11 @@ var IdentityCMap = (function IdentityCMapClosure() {
       return map;
     },
 
-    readCharCode: CMap.prototype.readCharCode
+    readCharCode: CMap.prototype.readCharCode,
+
+    get isIdentityCMap() {
+      error('should not access .isIdentityCMap');
+    }
   };
 
   return IdentityCMap;
@@ -22789,6 +22918,13 @@ var CMapFactory = (function CMapFactoryClosure() {
     }
   }
 
+  function parseCMapName(cMap, lexer) {
+    var obj = lexer.getObj();
+    if (isName(obj) && isString(obj.name)) {
+      cMap.name = obj.name;
+    }
+  }
+
   function parseCMap(cMap, lexer, builtInCMapParams, useCMap) {
     var previous;
     var embededUseCMap;
@@ -22799,6 +22935,8 @@ var CMapFactory = (function CMapFactoryClosure() {
       } else if (isName(obj)) {
         if (obj.name === 'WMode') {
           parseWMode(cMap, lexer);
+        } else if (obj.name === 'CMapName') {
+          parseCMapName(cMap, lexer);
         }
         previous = obj;
       } else if (isCmd(obj)) {
@@ -22907,6 +23045,9 @@ var CMapFactory = (function CMapFactoryClosure() {
           parseCMap(cMap, lexer, builtInCMapParams, useCMap);
         } catch (e) {
           warn('Invalid CMap data. ' + e);
+        }
+        if (cMap.isIdentityCMap) {
+          return createBuiltInCMap(cMap.name, builtInCMapParams);
         }
         return cMap;
       }
@@ -25332,6 +25473,7 @@ var Font = (function FontClosure() {
     this.ascent = properties.ascent / PDF_GLYPH_SPACE_UNITS;
     this.descent = properties.descent / PDF_GLYPH_SPACE_UNITS;
     this.fontMatrix = properties.fontMatrix;
+    this.bbox = properties.bbox;
 
     this.toUnicode = properties.toUnicode = this.buildToUnicode(properties);
 
@@ -25469,6 +25611,10 @@ var Font = (function FontClosure() {
     if (subtype === 'OpenType') {
       type = 'OpenType';
     }
+    // Some CIDFontType0C fonts by mistake claim CIDFontType0.
+    if (type === 'CIDFontType0') {
+      subtype = isType1File(file) ? 'CIDFontType0' : 'CIDFontType0C';
+    }
 
     var data;
     switch (type) {
@@ -25547,6 +25693,20 @@ var Font = (function FontClosure() {
   function isTrueTypeFile(file) {
     var header = file.peekBytes(4);
     return readUint32(header, 0) === 0x00010000;
+  }
+
+  function isType1File(file) {
+    var header = file.peekBytes(2);
+    // All Type1 font programs must begin with the comment '%!' (0x25 + 0x21).
+    if (header[0] === 0x25 && header[1] === 0x21) {
+      return true;
+    }
+    // ... obviously some fonts violate that part of the specification,
+    // please refer to the comment in |Type1Font| below.
+    if (header[0] === 0x80 && header[1] === 0x01) { // pfb file header.
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -26125,7 +26285,10 @@ var Font = (function FontClosure() {
           }
         }
 
-        if (!potentialTable) {
+        if (potentialTable) {
+          font.pos = start + potentialTable.offset;
+        }
+        if (!potentialTable || font.peekByte() === -1) {
           warn('Could not find a preferred cmap table.');
           return {
             platformId: -1,
@@ -26135,7 +26298,6 @@ var Font = (function FontClosure() {
           };
         }
 
-        font.pos = start + potentialTable.offset;
         var format = font.getUint16();
         var length = font.getUint16();
         var language = font.getUint16();
@@ -26570,6 +26732,9 @@ var Font = (function FontClosure() {
           default:
             warn('Unknown/unsupported post table version ' + version);
             valid = false;
+            if (properties.defaultEncoding) {
+              glyphNames = properties.defaultEncoding;
+            }
             break;
         }
         properties.glyphNames = glyphNames;
@@ -26996,13 +27161,18 @@ var Font = (function FontClosure() {
         }
       }
 
-      var charCodeToGlyphId = [], charCode, toUnicode = properties.toUnicode;
+      var charCodeToGlyphId = [], charCode;
+      var toUnicode = properties.toUnicode, widths = properties.widths;
+      var isIdentityUnicode = toUnicode instanceof IdentityToUnicodeMap;
 
-      function hasGlyph(glyphId, charCode) {
+      function hasGlyph(glyphId, charCode, widthCode) {
         if (!missingGlyphs[glyphId]) {
           return true;
         }
-        if (charCode >= 0 && toUnicode.has(charCode)) {
+        if (!isIdentityUnicode && charCode >= 0 && toUnicode.has(charCode)) {
+          return true;
+        }
+        if (widths && widthCode >= 0 && isNum(widths[widthCode])) {
           return true;
         }
         return false;
@@ -27022,7 +27192,7 @@ var Font = (function FontClosure() {
           }
 
           if (glyphId >= 0 && glyphId < numGlyphs &&
-              hasGlyph(glyphId, charCode)) {
+              hasGlyph(glyphId, charCode, cid)) {
             charCodeToGlyphId[charCode] = glyphId;
           }
         });
@@ -27083,7 +27253,7 @@ var Font = (function FontClosure() {
             var found = false;
             for (i = 0; i < cmapMappingsLength; ++i) {
               if (cmapMappings[i].charCode === unicodeOrCharCode &&
-                  hasGlyph(cmapMappings[i].glyphId, unicodeOrCharCode)) {
+                  hasGlyph(cmapMappings[i].glyphId, unicodeOrCharCode, -1)) {
                 charCodeToGlyphId[charCode] = cmapMappings[i].glyphId;
                 found = true;
                 break;
@@ -27093,7 +27263,7 @@ var Font = (function FontClosure() {
               // Try to map using the post table. There are currently no known
               // pdfs that this fixes.
               var glyphId = properties.glyphNames.indexOf(glyphName);
-              if (glyphId > 0 && hasGlyph(glyphId, -1)) {
+              if (glyphId > 0 && hasGlyph(glyphId, -1, -1)) {
                 charCodeToGlyphId[charCode] = glyphId;
               }
             }
@@ -40377,25 +40547,25 @@ var StreamsSequenceStream = (function StreamsSequenceStreamClosure() {
 })();
 
 var FlateStream = (function FlateStreamClosure() {
-  var codeLenCodeMap = new Uint32Array([
+  var codeLenCodeMap = new Int32Array([
     16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15
   ]);
 
-  var lengthDecode = new Uint32Array([
+  var lengthDecode = new Int32Array([
     0x00003, 0x00004, 0x00005, 0x00006, 0x00007, 0x00008, 0x00009, 0x0000a,
     0x1000b, 0x1000d, 0x1000f, 0x10011, 0x20013, 0x20017, 0x2001b, 0x2001f,
     0x30023, 0x3002b, 0x30033, 0x3003b, 0x40043, 0x40053, 0x40063, 0x40073,
     0x50083, 0x500a3, 0x500c3, 0x500e3, 0x00102, 0x00102, 0x00102
   ]);
 
-  var distDecode = new Uint32Array([
+  var distDecode = new Int32Array([
     0x00001, 0x00002, 0x00003, 0x00004, 0x10005, 0x10007, 0x20009, 0x2000d,
     0x30011, 0x30019, 0x40021, 0x40031, 0x50041, 0x50061, 0x60081, 0x600c1,
     0x70101, 0x70181, 0x80201, 0x80301, 0x90401, 0x90601, 0xa0801, 0xa0c01,
     0xb1001, 0xb1801, 0xc2001, 0xc3001, 0xd4001, 0xd6001
   ]);
 
-  var fixedLitCodeTab = [new Uint32Array([
+  var fixedLitCodeTab = [new Int32Array([
     0x70100, 0x80050, 0x80010, 0x80118, 0x70110, 0x80070, 0x80030, 0x900c0,
     0x70108, 0x80060, 0x80020, 0x900a0, 0x80000, 0x80080, 0x80040, 0x900e0,
     0x70104, 0x80058, 0x80018, 0x90090, 0x70114, 0x80078, 0x80038, 0x900d0,
@@ -40462,7 +40632,7 @@ var FlateStream = (function FlateStreamClosure() {
     0x7010f, 0x8006f, 0x8002f, 0x900bf, 0x8000f, 0x8008f, 0x8004f, 0x900ff
   ]), 9];
 
-  var fixedDistCodeTab = [new Uint32Array([
+  var fixedDistCodeTab = [new Int32Array([
     0x50000, 0x50010, 0x50008, 0x50018, 0x50004, 0x50014, 0x5000c, 0x5001c,
     0x50002, 0x50012, 0x5000a, 0x5001a, 0x50006, 0x50016, 0x5000e, 0x00000,
     0x50001, 0x50011, 0x50009, 0x50019, 0x50005, 0x50015, 0x5000d, 0x5001d,
@@ -40559,7 +40729,7 @@ var FlateStream = (function FlateStreamClosure() {
 
     // build the table
     var size = 1 << maxLen;
-    var codes = new Uint32Array(size);
+    var codes = new Int32Array(size);
     for (var len = 1, code = 0, skip = 2;
          len <= maxLen;
          ++len, code <<= 1, skip <<= 1) {
@@ -42636,22 +42806,6 @@ var WorkerMessageHandler = PDFJS.WorkerMessageHandler = {
 
           var length = fullRequestXhr.getResponseHeader('Content-Length');
           length = parseInt(length, 10);
-//#if (GENERIC || CHROME)
-          if (fullRequestXhr.status === 206) {
-            // Since Chrome 39, there exists a bug where cached responses are
-            // served with status code 206 for non-range requests.
-            // Content-Length does not specify the total size of the resource
-            // when the status code is 206 (see RFC 2616, section 14.16).
-            // In this case, extract the file size from the Content-Range
-            // header, which is defined to be "bytes start-end/length" for
-            // byte range requests.
-            // See https://github.com/mozilla/pdf.js/issues/5512 and
-            // https://code.google.com/p/chromium/issues/detail?id=442318
-            length = fullRequestXhr.getResponseHeader('Content-Range');
-            length = length && /bytes \d+-\d+\/(\d+)/.exec(length);
-            length = length && parseInt(length[1], 10);
-          }
-//#endif
           if (!isInt(length)) {
             return;
           }
@@ -48087,14 +48241,11 @@ if (!PDFJS.workerSrc && typeof document !== 'undefined') {
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/* globals CustomStyle, scrollIntoView, PDFJS */
+/* globals CustomStyle, PDFJS */
 
 'use strict';
 
-var FIND_SCROLL_OFFSET_TOP = -50;
-var FIND_SCROLL_OFFSET_LEFT = -400;
 var MAX_TEXT_DIVS_TO_RENDER = 100000;
-var RENDER_DELAY = 200; // ms
 
 var NonWhitespaceRegexp = /\S/;
 
@@ -48103,26 +48254,44 @@ function isAllWhitespace(str) {
 }
 
 /**
+ * @typedef {Object} TextLayerBuilderOptions
+ * @property {HTMLDivElement} textLayerDiv - The text layer container.
+ * @property {number} pageIndex - The page index.
+ * @property {PageViewport} viewport - The viewport of the text layer.
+ * @property {PDFFindController} findController
+ */
+
+/**
  * TextLayerBuilder provides text-selection functionality for the PDF.
  * It does this by creating overlay divs over the PDF text. These divs
  * contain text that matches the PDF text they are overlaying. This object
  * also provides a way to highlight text that is being searched for.
+ * @class
  */
 var TextLayerBuilder = (function TextLayerBuilderClosure() {
   function TextLayerBuilder(options) {
     this.textLayerDiv = options.textLayerDiv;
-    this.layoutDone = false;
+    this.renderingDone = false;
     this.divContentDone = false;
     this.pageIdx = options.pageIndex;
+    this.pageNumber = this.pageIdx + 1;
     this.matches = [];
-    this.lastScrollSource = options.lastScrollSource || null;
     this.viewport = options.viewport;
-    this.isViewerInPresentationMode = options.isViewerInPresentationMode;
     this.textDivs = [];
     this.findController = options.findController || null;
   }
 
   TextLayerBuilder.prototype = {
+    _finishRendering: function TextLayerBuilder_finishRendering() {
+      this.renderingDone = true;
+
+      var event = document.createEvent('CustomEvent');
+      event.initCustomEvent('textlayerrendered', true, true, {
+        pageNumber: this.pageNumber
+      });
+      this.textLayerDiv.dispatchEvent(event);
+    },
+
     renderLayer: function TextLayerBuilder_renderLayer() {
       var textLayerFrag = document.createDocumentFragment();
       var textDivs = this.textDivs;
@@ -48133,6 +48302,7 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
       // No point in rendering many divs as it would make the browser
       // unusable even after the divs are rendered.
       if (textDivsLength > MAX_TEXT_DIVS_TO_RENDER) {
+        this._finishRendering();
         return;
       }
 
@@ -48157,40 +48327,52 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
         var width = ctx.measureText(textDiv.textContent).width;
         if (width > 0) {
           textLayerFrag.appendChild(textDiv);
-          // Dataset values come of type string.
-          var textScale = textDiv.dataset.canvasWidth / width;
+          var transform;
+          if (textDiv.dataset.canvasWidth !== undefined) {
+            // Dataset values come of type string.
+            var textScale = textDiv.dataset.canvasWidth / width;
+            transform = 'scaleX(' + textScale + ')';
+          } else {
+            transform = '';
+          }
           var rotation = textDiv.dataset.angle;
-          var transform = 'scale(' + textScale + ', 1)';
           if (rotation) {
             transform = 'rotate(' + rotation + 'deg) ' + transform;
           }
-          CustomStyle.setProp('transform' , textDiv, transform);
-          CustomStyle.setProp('transformOrigin' , textDiv, '0% 0%');
+          if (transform) {
+            CustomStyle.setProp('transform' , textDiv, transform);
+          }
         }
       }
 
       this.textLayerDiv.appendChild(textLayerFrag);
-      this.renderingDone = true;
+      this._finishRendering();
       this.updateMatches();
     },
 
-    setupRenderLayoutTimer:
-        function TextLayerBuilder_setupRenderLayoutTimer() {
-      // Schedule renderLayout() if the user has been scrolling,
-      // otherwise run it right away.
-      var self = this;
-      var lastScroll = (this.lastScrollSource === null ?
-                        0 : this.lastScrollSource.lastScroll);
+    /**
+     * Renders the text layer.
+     * @param {number} timeout (optional) if specified, the rendering waits
+     *   for specified amount of ms.
+     */
+    render: function TextLayerBuilder_render(timeout) {
+      if (!this.divContentDone || this.renderingDone) {
+        return;
+      }
 
-      if (Date.now() - lastScroll > RENDER_DELAY) { // Render right away
+      if (this.renderTimer) {
+        clearTimeout(this.renderTimer);
+        this.renderTimer = null;
+      }
+
+      if (!timeout) { // Render right away
         this.renderLayer();
       } else { // Schedule
-        if (this.renderTimer) {
-          clearTimeout(this.renderTimer);
-        }
+        var self = this;
         this.renderTimer = setTimeout(function() {
-          self.setupRenderLayoutTimer();
-        }, RENDER_DELAY);
+          self.renderLayer();
+          self.renderTimer = null;
+        }, timeout);
       }
     },
 
@@ -48224,22 +48406,31 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
         left = tx[4] + (fontAscent * Math.sin(angle));
         top = tx[5] - (fontAscent * Math.cos(angle));
       }
-      textDiv.style.position = 'absolute';
       textDiv.style.left = left + 'px';
       textDiv.style.top = top + 'px';
       textDiv.style.fontSize = fontHeight + 'px';
       textDiv.style.fontFamily = style.fontFamily;
 
       textDiv.textContent = geom.str;
-      textDiv.dataset.fontName = geom.fontName;
+      // |fontName| is only used by the Font Inspector. This test will succeed
+      // when e.g. the Font Inspector is off but the Stepper is on, but it's
+      // not worth the effort to do a more accurate test.
+      if (PDFJS.pdfBug) {
+        textDiv.dataset.fontName = geom.fontName;
+      }
       // Storing into dataset will convert number into string.
       if (angle !== 0) {
         textDiv.dataset.angle = angle * (180 / Math.PI);
       }
-      if (style.vertical) {
-        textDiv.dataset.canvasWidth = geom.height * this.viewport.scale;
-      } else {
-        textDiv.dataset.canvasWidth = geom.width * this.viewport.scale;
+      // We don't bother scaling single-char text divs, because it has very
+      // little effect on text highlighting. This makes scrolling on docs with
+      // lots of such divs a lot faster.
+      if (textDiv.textContent.length > 1) {
+        if (style.vertical) {
+          textDiv.dataset.canvasWidth = geom.height * this.viewport.scale;
+        } else {
+          textDiv.dataset.canvasWidth = geom.width * this.viewport.scale;
+        }
       }
     },
 
@@ -48251,7 +48442,6 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
         this.appendText(textItems[i], textContent.styles);
       }
       this.divContentDone = true;
-      this.setupRenderLayoutTimer();
     },
 
     convertMatches: function TextLayerBuilder_convertMatches(matches) {
@@ -48313,8 +48503,9 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
       var bidiTexts = this.textContent.items;
       var textDivs = this.textDivs;
       var prevEnd = null;
+      var pageIdx = this.pageIdx;
       var isSelectedPage = (this.findController === null ?
-        false : (this.pageIdx === this.findController.selected.pageIdx));
+        false : (pageIdx === this.findController.selected.pageIdx));
       var selectedMatchIdx = (this.findController === null ?
                               -1 : this.findController.selected.matchIdx);
       var highlightAll = (this.findController === null ?
@@ -48360,10 +48551,9 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
         var isSelected = (isSelectedPage && i === selectedMatchIdx);
         var highlightSuffix = (isSelected ? ' selected' : '');
 
-        if (isSelected && !this.isViewerInPresentationMode) {
-          scrollIntoView(textDivs[begin.divIdx],
-                         { top: FIND_SCROLL_OFFSET_TOP,
-                           left: FIND_SCROLL_OFFSET_LEFT });
+        if (this.findController) {
+          this.findController.updateMatchPosition(pageIdx, i, textDivs,
+                                                  begin.divIdx, end.divIdx);
         }
 
         // Match inside new div.
@@ -48434,6 +48624,27 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
   };
   return TextLayerBuilder;
 })();
+
+/**
+ * @constructor
+ * @implements IPDFTextLayerFactory
+ */
+function DefaultTextLayerFactory() {}
+DefaultTextLayerFactory.prototype = {
+  /**
+   * @param {HTMLDivElement} textLayerDiv
+   * @param {number} pageIndex
+   * @param {PageViewport} viewport
+   * @returns {TextLayerBuilder}
+   */
+  createTextLayerBuilder: function (textLayerDiv, pageIndex, viewport) {
+    return new TextLayerBuilder({
+      textLayerDiv: textLayerDiv,
+      pageIndex: pageIndex,
+      viewport: viewport
+    });
+  }
+};
 ;/* -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* Copyright 2012 Mozilla Foundation
  *
@@ -48451,6 +48662,13 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
  */
 
 'use strict';
+
+var CSS_UNITS = 96.0 / 72.0;
+var DEFAULT_SCALE = 'auto';
+var UNKNOWN_SCALE = 0;
+var MAX_AUTO_SCALE = 1.25;
+var SCROLLBAR_PADDING = 40;
+var VERTICAL_PADDING = 5;
 
 // optimised CSS custom property getter/setter
 var CustomStyle = (function CustomStyleClosure() {
@@ -48575,6 +48793,150 @@ function scrollIntoView(element, spot) {
 }
 
 /**
+ * Helper function to start monitoring the scroll event and converting them into
+ * PDF.js friendly one: with scroll debounce and scroll direction.
+ */
+function watchScroll(viewAreaElement, callback) {
+  var debounceScroll = function debounceScroll(evt) {
+    if (rAF) {
+      return;
+    }
+    // schedule an invocation of scroll for next animation frame.
+    rAF = window.requestAnimationFrame(function viewAreaElementScrolled() {
+      rAF = null;
+
+      var currentY = viewAreaElement.scrollTop;
+      var lastY = state.lastY;
+      if (currentY !== lastY) {
+        state.down = currentY > lastY;
+      }
+      state.lastY = currentY;
+      callback(state);
+    });
+  };
+
+  var state = {
+    down: true,
+    lastY: viewAreaElement.scrollTop,
+    _eventHandler: debounceScroll
+  };
+
+  var rAF = null;
+  viewAreaElement.addEventListener('scroll', debounceScroll, true);
+  return state;
+}
+
+/**
+ * Helper function to parse query string (e.g. ?param1=value&parm2=...).
+ */
+function parseQueryString(query) {
+  var parts = query.split('&');
+  var params = {};
+  for (var i = 0, ii = parts.length; i < ii; ++i) {
+    var param = parts[i].split('=');
+    var key = param[0].toLowerCase();
+    var value = param.length > 1 ? param[1] : null;
+    params[decodeURIComponent(key)] = decodeURIComponent(value);
+  }
+  return params;
+}
+
+/**
+ * Use binary search to find the index of the first item in a given array which
+ * passes a given condition. The items are expected to be sorted in the sense
+ * that if the condition is true for one item in the array, then it is also true
+ * for all following items.
+ *
+ * @returns {Number} Index of the first array element to pass the test,
+ *                   or |items.length| if no such element exists.
+ */
+function binarySearchFirstItem(items, condition) {
+  var minIndex = 0;
+  var maxIndex = items.length - 1;
+
+  if (items.length === 0 || !condition(items[maxIndex])) {
+    return items.length;
+  }
+  if (condition(items[minIndex])) {
+    return minIndex;
+  }
+
+  while (minIndex < maxIndex) {
+    var currentIndex = (minIndex + maxIndex) >> 1;
+    var currentItem = items[currentIndex];
+    if (condition(currentItem)) {
+      maxIndex = currentIndex;
+    } else {
+      minIndex = currentIndex + 1;
+    }
+  }
+  return minIndex; /* === maxIndex */
+}
+
+/**
+ * Generic helper to find out what elements are visible within a scroll pane.
+ */
+function getVisibleElements(scrollEl, views, sortByVisibility) {
+  var top = scrollEl.scrollTop, bottom = top + scrollEl.clientHeight;
+  var left = scrollEl.scrollLeft, right = left + scrollEl.clientWidth;
+
+  function isElementBottomBelowViewTop(view) {
+    var element = view.div;
+    var elementBottom =
+      element.offsetTop + element.clientTop + element.clientHeight;
+    return elementBottom > top;
+  }
+
+  var visible = [], view, element;
+  var currentHeight, viewHeight, hiddenHeight, percentHeight;
+  var currentWidth, viewWidth;
+  var firstVisibleElementInd = (views.length === 0) ? 0 :
+    binarySearchFirstItem(views, isElementBottomBelowViewTop);
+
+  for (var i = firstVisibleElementInd, ii = views.length; i < ii; i++) {
+    view = views[i];
+    element = view.div;
+    currentHeight = element.offsetTop + element.clientTop;
+    viewHeight = element.clientHeight;
+
+    if (currentHeight > bottom) {
+      break;
+    }
+
+    currentWidth = element.offsetLeft + element.clientLeft;
+    viewWidth = element.clientWidth;
+    if (currentWidth + viewWidth < left || currentWidth > right) {
+      continue;
+    }
+    hiddenHeight = Math.max(0, top - currentHeight) +
+      Math.max(0, currentHeight + viewHeight - bottom);
+    percentHeight = ((viewHeight - hiddenHeight) * 100 / viewHeight) | 0;
+
+    visible.push({
+      id: view.id,
+      x: currentWidth,
+      y: currentHeight,
+      view: view,
+      percent: percentHeight
+    });
+  }
+
+  var first = visible[0];
+  var last = visible[visible.length - 1];
+
+  if (sortByVisibility) {
+    visible.sort(function(a, b) {
+      var pc = a.percent - b.percent;
+      if (Math.abs(pc) > 0.001) {
+        return -pc;
+      }
+      return a.id - b.id; // ensure stability
+    });
+  }
+  return {first: first, last: last, views: visible};
+}
+
+/**
  * Event handler to suppress context menu.
  */
 function noContextMenuHandler(e) {
@@ -48618,6 +48980,7 @@ var ProgressBar = (function ProgressBarClosure() {
   }
 
   function ProgressBar(id, opts) {
+    this.visible = true;
 
     // Fetch the sub-elements for later.
     this.div = document.querySelector(id + ' .progress');
@@ -48671,34 +49034,26 @@ var ProgressBar = (function ProgressBarClosure() {
     },
 
     hide: function ProgressBar_hide() {
+      if (!this.visible) {
+        return;
+      }
+      this.visible = false;
       this.bar.classList.add('hidden');
-      this.bar.removeAttribute('style');
+      document.body.classList.remove('loadingInProgress');
+    },
+
+    show: function ProgressBar_show() {
+      if (this.visible) {
+        return;
+      }
+      this.visible = true;
+      document.body.classList.add('loadingInProgress');
+      this.bar.classList.remove('hidden');
     }
   };
 
   return ProgressBar;
 })();
-
-var Cache = function cacheCache(size) {
-  var data = [];
-  this.push = function cachePush(view) {
-    var i = data.indexOf(view);
-    if (i >= 0) {
-      data.splice(i, 1);
-    }
-    data.push(view);
-    if (data.length > size) {
-      data.shift().destroy();
-    }
-  };
-  this.resize = function (newSize) {
-    size = newSize;
-    while (data.length > size) {
-      data.shift().destroy();
-    }
-  };
-};
-
 ;(function() {
   angular.module('angular-pdf-js', []);
 
@@ -48896,8 +49251,12 @@ var Cache = function cacheCache(size) {
       vw = viewport.width;
       cw = this.containerElement.width() - 32;
       this.log.log('UI: VW %s CW %s', vw, cw);
-      this.fitWidthScale = cw / vw;
-      this.currentZoom = this.fitWidthScale;
+      if (cw <= 0) {
+        this.currentZoom = 1;
+      } else {
+        this.fitWidthScale = cw / vw;
+        this.currentZoom = this.fitWidthScale;
+      }
       this.defaultZoom = this.currentZoom;
       this.log.log('UI: Canvas Container %s, %s. Viewport %O', this.containerElement.width(), this.containerElement.height(), viewport);
       return page.getViewport(this.currentZoom, 0);

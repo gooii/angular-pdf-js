@@ -13,14 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/* globals CustomStyle, scrollIntoView, PDFJS */
+/* globals CustomStyle, PDFJS */
 
 'use strict';
 
-var FIND_SCROLL_OFFSET_TOP = -50;
-var FIND_SCROLL_OFFSET_LEFT = -400;
 var MAX_TEXT_DIVS_TO_RENDER = 100000;
-var RENDER_DELAY = 200; // ms
 
 var NonWhitespaceRegexp = /\S/;
 
@@ -29,26 +26,44 @@ function isAllWhitespace(str) {
 }
 
 /**
+ * @typedef {Object} TextLayerBuilderOptions
+ * @property {HTMLDivElement} textLayerDiv - The text layer container.
+ * @property {number} pageIndex - The page index.
+ * @property {PageViewport} viewport - The viewport of the text layer.
+ * @property {PDFFindController} findController
+ */
+
+/**
  * TextLayerBuilder provides text-selection functionality for the PDF.
  * It does this by creating overlay divs over the PDF text. These divs
  * contain text that matches the PDF text they are overlaying. This object
  * also provides a way to highlight text that is being searched for.
+ * @class
  */
 var TextLayerBuilder = (function TextLayerBuilderClosure() {
   function TextLayerBuilder(options) {
     this.textLayerDiv = options.textLayerDiv;
-    this.layoutDone = false;
+    this.renderingDone = false;
     this.divContentDone = false;
     this.pageIdx = options.pageIndex;
+    this.pageNumber = this.pageIdx + 1;
     this.matches = [];
-    this.lastScrollSource = options.lastScrollSource || null;
     this.viewport = options.viewport;
-    this.isViewerInPresentationMode = options.isViewerInPresentationMode;
     this.textDivs = [];
     this.findController = options.findController || null;
   }
 
   TextLayerBuilder.prototype = {
+    _finishRendering: function TextLayerBuilder_finishRendering() {
+      this.renderingDone = true;
+
+      var event = document.createEvent('CustomEvent');
+      event.initCustomEvent('textlayerrendered', true, true, {
+        pageNumber: this.pageNumber
+      });
+      this.textLayerDiv.dispatchEvent(event);
+    },
+
     renderLayer: function TextLayerBuilder_renderLayer() {
       var textLayerFrag = document.createDocumentFragment();
       var textDivs = this.textDivs;
@@ -59,6 +74,7 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
       // No point in rendering many divs as it would make the browser
       // unusable even after the divs are rendered.
       if (textDivsLength > MAX_TEXT_DIVS_TO_RENDER) {
+        this._finishRendering();
         return;
       }
 
@@ -83,40 +99,52 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
         var width = ctx.measureText(textDiv.textContent).width;
         if (width > 0) {
           textLayerFrag.appendChild(textDiv);
-          // Dataset values come of type string.
-          var textScale = textDiv.dataset.canvasWidth / width;
+          var transform;
+          if (textDiv.dataset.canvasWidth !== undefined) {
+            // Dataset values come of type string.
+            var textScale = textDiv.dataset.canvasWidth / width;
+            transform = 'scaleX(' + textScale + ')';
+          } else {
+            transform = '';
+          }
           var rotation = textDiv.dataset.angle;
-          var transform = 'scale(' + textScale + ', 1)';
           if (rotation) {
             transform = 'rotate(' + rotation + 'deg) ' + transform;
           }
-          CustomStyle.setProp('transform' , textDiv, transform);
-          CustomStyle.setProp('transformOrigin' , textDiv, '0% 0%');
+          if (transform) {
+            CustomStyle.setProp('transform' , textDiv, transform);
+          }
         }
       }
 
       this.textLayerDiv.appendChild(textLayerFrag);
-      this.renderingDone = true;
+      this._finishRendering();
       this.updateMatches();
     },
 
-    setupRenderLayoutTimer:
-        function TextLayerBuilder_setupRenderLayoutTimer() {
-      // Schedule renderLayout() if the user has been scrolling,
-      // otherwise run it right away.
-      var self = this;
-      var lastScroll = (this.lastScrollSource === null ?
-                        0 : this.lastScrollSource.lastScroll);
+    /**
+     * Renders the text layer.
+     * @param {number} timeout (optional) if specified, the rendering waits
+     *   for specified amount of ms.
+     */
+    render: function TextLayerBuilder_render(timeout) {
+      if (!this.divContentDone || this.renderingDone) {
+        return;
+      }
 
-      if (Date.now() - lastScroll > RENDER_DELAY) { // Render right away
+      if (this.renderTimer) {
+        clearTimeout(this.renderTimer);
+        this.renderTimer = null;
+      }
+
+      if (!timeout) { // Render right away
         this.renderLayer();
       } else { // Schedule
-        if (this.renderTimer) {
-          clearTimeout(this.renderTimer);
-        }
+        var self = this;
         this.renderTimer = setTimeout(function() {
-          self.setupRenderLayoutTimer();
-        }, RENDER_DELAY);
+          self.renderLayer();
+          self.renderTimer = null;
+        }, timeout);
       }
     },
 
@@ -150,22 +178,31 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
         left = tx[4] + (fontAscent * Math.sin(angle));
         top = tx[5] - (fontAscent * Math.cos(angle));
       }
-      textDiv.style.position = 'absolute';
       textDiv.style.left = left + 'px';
       textDiv.style.top = top + 'px';
       textDiv.style.fontSize = fontHeight + 'px';
       textDiv.style.fontFamily = style.fontFamily;
 
       textDiv.textContent = geom.str;
-      textDiv.dataset.fontName = geom.fontName;
+      // |fontName| is only used by the Font Inspector. This test will succeed
+      // when e.g. the Font Inspector is off but the Stepper is on, but it's
+      // not worth the effort to do a more accurate test.
+      if (PDFJS.pdfBug) {
+        textDiv.dataset.fontName = geom.fontName;
+      }
       // Storing into dataset will convert number into string.
       if (angle !== 0) {
         textDiv.dataset.angle = angle * (180 / Math.PI);
       }
-      if (style.vertical) {
-        textDiv.dataset.canvasWidth = geom.height * this.viewport.scale;
-      } else {
-        textDiv.dataset.canvasWidth = geom.width * this.viewport.scale;
+      // We don't bother scaling single-char text divs, because it has very
+      // little effect on text highlighting. This makes scrolling on docs with
+      // lots of such divs a lot faster.
+      if (textDiv.textContent.length > 1) {
+        if (style.vertical) {
+          textDiv.dataset.canvasWidth = geom.height * this.viewport.scale;
+        } else {
+          textDiv.dataset.canvasWidth = geom.width * this.viewport.scale;
+        }
       }
     },
 
@@ -177,7 +214,6 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
         this.appendText(textItems[i], textContent.styles);
       }
       this.divContentDone = true;
-      this.setupRenderLayoutTimer();
     },
 
     convertMatches: function TextLayerBuilder_convertMatches(matches) {
@@ -239,8 +275,9 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
       var bidiTexts = this.textContent.items;
       var textDivs = this.textDivs;
       var prevEnd = null;
+      var pageIdx = this.pageIdx;
       var isSelectedPage = (this.findController === null ?
-        false : (this.pageIdx === this.findController.selected.pageIdx));
+        false : (pageIdx === this.findController.selected.pageIdx));
       var selectedMatchIdx = (this.findController === null ?
                               -1 : this.findController.selected.matchIdx);
       var highlightAll = (this.findController === null ?
@@ -286,10 +323,9 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
         var isSelected = (isSelectedPage && i === selectedMatchIdx);
         var highlightSuffix = (isSelected ? ' selected' : '');
 
-        if (isSelected && !this.isViewerInPresentationMode) {
-          scrollIntoView(textDivs[begin.divIdx],
-                         { top: FIND_SCROLL_OFFSET_TOP,
-                           left: FIND_SCROLL_OFFSET_LEFT });
+        if (this.findController) {
+          this.findController.updateMatchPosition(pageIdx, i, textDivs,
+                                                  begin.divIdx, end.divIdx);
         }
 
         // Match inside new div.
@@ -360,3 +396,24 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
   };
   return TextLayerBuilder;
 })();
+
+/**
+ * @constructor
+ * @implements IPDFTextLayerFactory
+ */
+function DefaultTextLayerFactory() {}
+DefaultTextLayerFactory.prototype = {
+  /**
+   * @param {HTMLDivElement} textLayerDiv
+   * @param {number} pageIndex
+   * @param {PageViewport} viewport
+   * @returns {TextLayerBuilder}
+   */
+  createTextLayerBuilder: function (textLayerDiv, pageIndex, viewport) {
+    return new TextLayerBuilder({
+      textLayerDiv: textLayerDiv,
+      pageIndex: pageIndex,
+      viewport: viewport
+    });
+  }
+};

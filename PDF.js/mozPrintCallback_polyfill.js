@@ -18,12 +18,8 @@
 
 'use strict';
 (function mozPrintCallbackPolyfillClosure() {
-  console.log('mozPrintCallbackPolyfillClosure');
   if ('mozPrintCallback' in document.createElement('canvas')) {
-    //console.log('Found print callback in canvas');
     return;
-  } else {
-    //console.log('Setting up printing callback')
   }
   // Cause positive result on feature-detection:
   HTMLCanvasElement.prototype.mozPrintCallback = undefined;
@@ -33,18 +29,15 @@
 
   var print = window.print;
   window.print = function print() {
-    console.log('Window Print');
     if (canvases) {
       console.warn('Ignored window.print() because of a pending print job.');
       return;
     }
     try {
-      console.log('Sending beforeprint event');
       dispatchEvent('beforeprint');
     } finally {
       canvases = document.querySelectorAll('canvas');
       index = -1;
-      //console.log('Starting print');
       next();
     }
   };
@@ -56,9 +49,7 @@
   }
 
   function next() {
-    //console.log('Print next');
     if (!canvases) {
-      //console.log('No canvases to print');
       return; // Print task cancelled by user (state reset in abort())
     }
 
@@ -66,20 +57,16 @@
     if (++index < canvases.length) {
       var canvas = canvases[index];
       if (typeof canvas.mozPrintCallback === 'function') {
-        //console.log('Canvas has print callback');
         canvas.mozPrintCallback({
           context: canvas.getContext('2d'),
           abort: abort,
           done: next
         });
       } else {
-        //console.log('Canvas does not have print callback');
         next();
       }
     } else {
-      //console.log('Callbacks complete, printing document');
       renderProgress();
-      //console.log('Calling print %O %O', print, window);
       print.call(window);
       setTimeout(abort, 20); // Tidy-up
     }
@@ -95,7 +82,7 @@
 
   function renderProgress() {
     var progressContainer = document.getElementById('mozPrintCallback-shim');
-    if (canvases) {
+    if (canvases && canvases.length) {
       var progress = Math.round(100 * index / canvases.length);
       var progressBar = progressContainer.querySelector('progress');
       var progressPerc = progressContainer.querySelector('.relative-progress');

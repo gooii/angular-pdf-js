@@ -48,7 +48,6 @@ class PdfHtmlUI
     # Work out which pages are currently visible
 
   clear: () =>
-    # TODO : Either clear the existing containers properly or re-use them
     @currentZoom = 1
     if @containerElement
       @containerElement.empty()
@@ -169,8 +168,12 @@ class PdfHtmlUI
 
     @log.log('UI: VW %s CW %s',vw, cw)
 
-    @fitWidthScale = cw / vw
-    @currentZoom = @fitWidthScale
+    if cw <= 0
+      @currentZoom = 1
+    else
+      @fitWidthScale = cw / vw
+      @currentZoom = @fitWidthScale
+
     @defaultZoom = @currentZoom
 
     @log.log('UI: Canvas Container %s, %s. Viewport %O',@containerElement.width(),@containerElement.height(), viewport)
@@ -245,7 +248,7 @@ class PdfHtmlUI
   resizeContainers:() =>
     viewport = @firstPageProxy.getViewport(@currentZoom, 0)
 
-    @log.log('UI: Resize containers',viewport)
+    @log.log('UI: Resize containers. Zoom %s, Viewport %O',@currentZoom, viewport)
     _.each @pageContainers, (p) =>
       p.wrapper.css('width',viewport.width)
       p.wrapper.css('height',viewport.height)

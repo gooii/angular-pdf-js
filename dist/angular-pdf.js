@@ -48978,7 +48978,7 @@ var Cache = function cacheCache(size) {
       var page1Top, scrollPosTop, viewport,
         _this = this;
       viewport = this.firstPageProxy.getViewport(this.currentZoom, 0);
-      this.log.log('UI: Resize containers', viewport);
+      this.log.log('UI: Resize containers. Zoom %s, Viewport %O', this.currentZoom, viewport);
       _.each(this.pageContainers, function(p) {
         p.wrapper.css('width', viewport.width);
         p.wrapper.css('height', viewport.height);

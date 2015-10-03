@@ -48584,6 +48584,7 @@ function isAllWhitespace(str) {
  */
 var TextLayerBuilder = (function TextLayerBuilderClosure() {
   function TextLayerBuilder(options) {
+    console.log('TLB: Create TextLayerBuilder',options);
     this.textLayerDiv = options.textLayerDiv;
     this.renderingDone = false;
     this.divContentDone = false;
@@ -48607,6 +48608,7 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
     },
 
     renderLayer: function TextLayerBuilder_renderLayer() {
+      console.log('TLB: renderLayer');
       var textLayerFrag = document.createDocumentFragment();
       var textDivs = this.textDivs;
       var textDivsLength = textDivs.length;
@@ -48670,6 +48672,7 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
      *   for specified amount of ms.
      */
     render: function TextLayerBuilder_render(timeout) {
+      console.log('TLB: Render Text Layer',this.divContentDone, this.renderingDone);
       if (!this.divContentDone || this.renderingDone) {
         return;
       }
@@ -48691,6 +48694,7 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
     },
 
     appendText: function TextLayerBuilder_appendText(geom, styles) {
+
       var style = styles[geom.fontName];
       var textDiv = document.createElement('div');
       this.textDivs.push(textDiv);
@@ -48746,9 +48750,11 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
           textDiv.dataset.canvasWidth = geom.width * this.viewport.scale;
         }
       }
+      console.log('TLB: Append Text Div',textDiv);
     },
 
     setTextContent: function TextLayerBuilder_setTextContent(textContent) {
+      console.log('TLB: setTextContent',textContent);
       this.textContent = textContent;
 
       var textItems = textContent.items;
@@ -48836,6 +48842,7 @@ var TextLayerBuilder = (function TextLayerBuilderClosure() {
       }
 
       function appendTextToDiv(divIdx, fromOffset, toOffset, className) {
+        console.log('TLB: appendTextToDiv',divIdx,fromOffset,toOffset,className);
         var div = textDivs[divIdx];
         var content = bidiTexts[divIdx].str.substring(fromOffset, toOffset);
         var node = document.createTextNode(content);
@@ -49944,6 +49951,10 @@ var ProgressBar = (function ProgressBarClosure() {
         this.currentJob.imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
         this.cacheWithoutText[this.currentJob.page.pageIndex] = this.currentJob;
       } else {
+        while (this.currentJob.textDiv.firstChild) {
+          this.currentJob.textDiv.removeChild(this.currentJob.textDiv.firstChild);
+        }
+        this.currentJob.context.textLayer.render();
         this.cache[this.currentJob.page.pageIndex] = this.currentJob;
       }
       this.currentJob.deferred.resolve(this.currentJob);
@@ -50332,6 +50343,7 @@ var ProgressBar = (function ProgressBarClosure() {
       this.clear();
       this.loadPdfDeferred = this.$q.defer();
       this.log.log('PDFJS getDocument');
+      PDFJS.verbosity = PDFJS.VERBOSITY_LEVELS.infos;
       pdfDocumentProxy = PDFJS.getDocument(url);
       pdfDocumentProxy.then(this.pdfLoaded, this.pdfLoadError);
       return this.loadPdfDeferred.promise;

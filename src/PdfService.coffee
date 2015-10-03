@@ -35,6 +35,7 @@ class PdfService
     @clear()
     @loadPdfDeferred = @$q.defer()
     @log.log('PDFJS getDocument')
+    PDFJS.verbosity = PDFJS.VERBOSITY_LEVELS.infos
     pdfDocumentProxy = PDFJS.getDocument(url)
     pdfDocumentProxy.then(@pdfLoaded, @pdfLoadError)
     return @loadPdfDeferred.promise

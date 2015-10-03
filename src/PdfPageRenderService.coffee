@@ -246,6 +246,10 @@ class PdfPageRenderService
       @currentJob.imageData = ctx.getImageData(0,0,ctx.canvas.width,ctx.canvas.height)
       @cacheWithoutText[@currentJob.page.pageIndex] = @currentJob
     else
+      while @currentJob.textDiv.firstChild
+        @currentJob.textDiv.removeChild(@currentJob.textDiv.firstChild)
+        
+      @currentJob.context.textLayer.render()
       @cache[@currentJob.page.pageIndex] = @currentJob
 
     @currentJob.deferred.resolve(@currentJob)

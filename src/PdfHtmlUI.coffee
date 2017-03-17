@@ -3,17 +3,39 @@ class PdfHtmlUI
 
   @$inject: ['$document','$log']
   constructor: (@document, @log) ->
-    @textLayerClass = 'textLayer'
+    @textLayerClass     = 'textLayer'
     @pageContainerClass = 'pageContainer'
-    @canvasClass = 'pdfPage'
+    @canvasClass        = 'pdfPage'
+    @currentZoom        = 1
+    @containerElement   = null
+    @pageHeight         = 0
+    @scrollOffset       = 0
+    @pageContainers     = []
 
-    @currentZoom = 1
+    # private zoom in function
+    @_zoomIn = (amount) =>
+      amount = amount || 0.1
+      @currentZoom += amount
+      #@log.log('TEXT: Zoom In',@currentZoom)
+      @resizeContainers()
 
-    @containerElement = null
+    # private zoom out function
+    @_zoomOut = () =>
+      amount        = amount || 0.1
+      @currentZoom -= amount
 
-    @pageHeight = 0
-    @scrollOffset = 0
-    @pageContainers = []
+      #@log.log('TEXT: Zoom Out',@currentZoom)
+
+      if @currentZoom < 0.1
+        @currentZoom = 0.1
+      @resizeContainers()
+      @scrollChanged()
+
+    # expose public functions which defer to the private functions
+    # and guarantee that they won't be called more than once per n
+    # milliseconds
+    @zoomIn  = _.throttle(@_zoomIn , 500, {})
+    @zoomOut = _.throttle(@_zoomOut, 500, {})
 
   setup: (@model, @renderService) =>
     @log.log('UI: Setup HtmlUI')
@@ -224,41 +246,30 @@ class PdfHtmlUI
     viewAreaElement.on('scroll', debounceScroll)
     return state
 
-  zoomIn: (amount) =>
-    amount = amount || 0.1
-    @currentZoom += amount
-    @log.log('TEXT: Zoom In',@currentZoom)
-    @resizeContainers()
-
-  zoomOut: () =>
-    amount = amount || 0.1
-    @currentZoom -= amount
-    @log.log('TEXT: Zoom Out',@currentZoom)
-
-    if @currentZoom < 0.1
-      @currentZoom = 0.1
-    @resizeContainers()
-    @scrollChanged()
-
   resetZoom: () =>
     @currentZoom = @defaultZoom
     @resizeContainers()
     @scrollChanged()
 
   resizeContainers:() =>
-    viewport = @firstPageProxy.getViewport(@currentZoom, 0)
+    # check we have at least one page container
+    return if @pageContainers.length < 1
+    # resize
+    viewport  = @firstPageProxy.getViewport(@currentZoom, 0)
+    scrTop    = @containerElement.scrollTop()
+    pgeTop    = @pageContainers[0]?.canvas.getBoundingClientRect().top
 
     @log.log('UI: Resize containers. Zoom %s, Viewport %O',@currentZoom, viewport)
+
     _.each @pageContainers, (p) =>
       p.wrapper.css('width',viewport.width)
       p.wrapper.css('height',viewport.height)
       p.canvas.width = viewport.width
       p.canvas.height = viewport.height
 
-    page1Top = @pageContainers[1].canvas.getBoundingClientRect().top
-    scrollPosTop = @containerElement.scrollTop()
-    @pageHeight = (scrollPosTop + page1Top) - @scrollOffset
-    @log.log('UI: Page Height',@pageHeight, scrollPosTop, @pageContainers[1].canvas.getBoundingClientRect())
+    @pageHeight = (scrTop + pgeTop) - @scrollOffset
+
+    @log.log('UI: Page Height', @pageHeight, scrTop, @pageContainers[0]?.canvas.getBoundingClientRect())
 
     if @pageHeight < 0
       @log.error('Page height is less than zero. Something went wrong')

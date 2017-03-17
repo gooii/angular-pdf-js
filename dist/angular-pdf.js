@@ -49400,12 +49400,11 @@ var ProgressBar = (function ProgressBarClosure() {
     PdfHtmlUI.$inject = ['$document', '$log'];
 
     function PdfHtmlUI(document, log) {
+      var _this = this;
       this.document = document;
       this.log = log;
       this.resizeContainers = __bind(this.resizeContainers, this);
       this.resetZoom = __bind(this.resetZoom, this);
-      this.zoomOut = __bind(this.zoomOut, this);
-      this.zoomIn = __bind(this.zoomIn, this);
       this.watchScroll = __bind(this.watchScroll, this);
       this.scrollToPage = __bind(this.scrollToPage, this);
       this.scrollTo = __bind(this.scrollTo, this);
@@ -49428,6 +49427,23 @@ var ProgressBar = (function ProgressBarClosure() {
       this.pageHeight = 0;
       this.scrollOffset = 0;
       this.pageContainers = [];
+      this._zoomIn = function(amount) {
+        amount = amount || 0.1;
+        _this.currentZoom += amount;
+        return _this.resizeContainers();
+      };
+      this._zoomOut = function() {
+        var amount;
+        amount = amount || 0.1;
+        _this.currentZoom -= amount;
+        if (_this.currentZoom < 0.1) {
+          _this.currentZoom = 0.1;
+        }
+        _this.resizeContainers();
+        return _this.scrollChanged();
+      };
+      this.zoomIn = _.throttle(this._zoomIn, 500, {});
+      this.zoomOut = _.throttle(this._zoomOut, 500, {});
     }
 
     PdfHtmlUI.prototype.setup = function(model, renderService) {
@@ -49642,25 +49658,6 @@ var ProgressBar = (function ProgressBarClosure() {
       return state;
     };
 
-    PdfHtmlUI.prototype.zoomIn = function(amount) {
-      amount = amount || 0.1;
-      this.currentZoom += amount;
-      this.log.log('TEXT: Zoom In', this.currentZoom);
-      return this.resizeContainers();
-    };
-
-    PdfHtmlUI.prototype.zoomOut = function() {
-      var amount;
-      amount = amount || 0.1;
-      this.currentZoom -= amount;
-      this.log.log('TEXT: Zoom Out', this.currentZoom);
-      if (this.currentZoom < 0.1) {
-        this.currentZoom = 0.1;
-      }
-      this.resizeContainers();
-      return this.scrollChanged();
-    };
-
     PdfHtmlUI.prototype.resetZoom = function() {
       this.currentZoom = this.defaultZoom;
       this.resizeContainers();
@@ -49668,9 +49665,14 @@ var ProgressBar = (function ProgressBarClosure() {
     };
 
     PdfHtmlUI.prototype.resizeContainers = function() {
-      var page1Top, scrollPosTop, viewport,
+      var pgeTop, scrTop, viewport, _ref, _ref1,
         _this = this;
+      if (this.pageContainers.length < 1) {
+        return;
+      }
       viewport = this.firstPageProxy.getViewport(this.currentZoom, 0);
+      scrTop = this.containerElement.scrollTop();
+      pgeTop = (_ref = this.pageContainers[0]) != null ? _ref.canvas.getBoundingClientRect().top : void 0;
       this.log.log('UI: Resize containers. Zoom %s, Viewport %O', this.currentZoom, viewport);
       _.each(this.pageContainers, function(p) {
         p.wrapper.css('width', viewport.width);
@@ -49678,10 +49680,8 @@ var ProgressBar = (function ProgressBarClosure() {
         p.canvas.width = viewport.width;
         return p.canvas.height = viewport.height;
       });
-      page1Top = this.pageContainers[1].canvas.getBoundingClientRect().top;
-      scrollPosTop = this.containerElement.scrollTop();
-      this.pageHeight = (scrollPosTop + page1Top) - this.scrollOffset;
-      this.log.log('UI: Page Height', this.pageHeight, scrollPosTop, this.pageContainers[1].canvas.getBoundingClientRect());
+      this.pageHeight = (scrTop + pgeTop) - this.scrollOffset;
+      this.log.log('UI: Page Height', this.pageHeight, scrTop, (_ref1 = this.pageContainers[0]) != null ? _ref1.canvas.getBoundingClientRect() : void 0);
       if (this.pageHeight < 0) {
         this.log.error('Page height is less than zero. Something went wrong');
         return this.pageHeight = viewport.height;

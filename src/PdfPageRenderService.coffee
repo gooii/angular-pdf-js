@@ -322,6 +322,8 @@ class PdfPageRenderService
             query:query
             highlightAll:true
           pageMatches:matches
+          updateMatchPosition: (pageIdx, i, textDivs, beginDivIdx, endDivIdx) =>
+            @log.warn("OK Here's the missing function. What do I do now?")
         }
         textLayer.updateMatches()
 

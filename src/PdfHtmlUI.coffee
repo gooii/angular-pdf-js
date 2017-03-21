@@ -12,30 +12,55 @@ class PdfHtmlUI
     @scrollOffset       = 0
     @pageContainers     = []
 
-    # private zoom in function
-    @_zoomIn = (amount) =>
-      amount = amount || 0.1
-      @currentZoom += amount
-      #@log.log('TEXT: Zoom In',@currentZoom)
-      @resizeContainers()
 
-    # private zoom out function
-    @_zoomOut = () =>
+    # performs the zoom based on @currentZoom value
+    @_doZoom = _.throttle(
+      ((visibleLimits, fnSetVisibleLimits) =>
+        @log.warn "Throttled do zoom."
+        @resizeContainers()
+        @scrollChanged()
+        if visibleLimits
+          fnSetVisibleLimits(visibleLimits.first, visibleLimits.last))
+      , 2000)
+
+    # private zoom in function - we do not debounce/throttle
+    # access so that the zoom level can be increased as many
+    # times as the user clicks but we throttle the functions
+    # that actually manipulate the DOM
+    @_zi = (amount, visibleLimits, fnSetVisibleLimits) =>
+      # adjust current zoom level
+      amount        = amount || 0.1
+      @currentZoom += amount
+      # do the DOM
+      @_doZoom(visibleLimits, fnSetVisibleLimits)
+
+    # private zoom out function - we don't debounce/throttle
+    # access so that the zoom level can be decreased as many
+    # times as the user clicks but we throttle the functions
+    # that actually manipulate the DOM
+    @_zo = (amount, visibleLimits, fnSetVisibleLimits) =>
+      # adjust current zoom level
       amount        = amount || 0.1
       @currentZoom -= amount
-
-      #@log.log('TEXT: Zoom Out',@currentZoom)
-
+      # reset base zoom level if it drops below 0.1
       if @currentZoom < 0.1
         @currentZoom = 0.1
-      @resizeContainers()
-      @scrollChanged()
+      # do the DOM
+      @_doZoom(visibleLimits, fnSetVisibleLimits)
+
+    # private reset zoom function
+    @_rz = (visibleLimits, fnSetVisibleLimits) =>
+      # reset back to default
+      @currentZoom = @defaultZoom || 1
+      # invoke throttle function
+      @_doZoom(visibleLimits, fnSetVisibleLimits)
 
     # expose public functions which defer to the private functions
     # and guarantee that they won't be called more than once per n
     # milliseconds
-    @zoomIn  = _.throttle(@_zoomIn , 500, {})
-    @zoomOut = _.throttle(@_zoomOut, 500, {})
+    @zoomIn    = @_zi
+    @zoomOut   = @_zo
+    @resetZoom = @_rz
 
   setup: (@model, @renderService) =>
     @log.log('UI: Setup HtmlUI')
@@ -246,12 +271,8 @@ class PdfHtmlUI
     viewAreaElement.on('scroll', debounceScroll)
     return state
 
-  resetZoom: () =>
-    @currentZoom = @defaultZoom
-    @resizeContainers()
-    @scrollChanged()
-
   resizeContainers:() =>
+    @log.warn "Resizing containers."
     # check we have at least one page container
     return if @pageContainers.length < 1
     # resize

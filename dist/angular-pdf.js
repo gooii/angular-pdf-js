@@ -49448,6 +49448,9 @@ var ProgressBar = (function ProgressBarClosure() {
         return _this._doZoom(visibleLimits, fnSetVisibleLimits);
       };
       this._rz = function(visibleLimits, fnSetVisibleLimits) {
+        if (_this.currentZoom === _this.defaultZoom) {
+          return;
+        }
         _this.currentZoom = _this.defaultZoom || 1;
         return _this._doZoom(visibleLimits, fnSetVisibleLimits);
       };

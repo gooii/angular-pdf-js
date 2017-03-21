@@ -50,6 +50,8 @@ class PdfHtmlUI
 
     # private reset zoom function
     @_rz = (visibleLimits, fnSetVisibleLimits) =>
+      # bomb out if current zoom is already default zoom
+      return if @currentZoom == @defaultZoom
       # reset back to default
       @currentZoom = @defaultZoom || 1
       # invoke throttle function

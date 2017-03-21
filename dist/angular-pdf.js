@@ -49404,7 +49404,6 @@ var ProgressBar = (function ProgressBarClosure() {
       this.document = document;
       this.log = log;
       this.resizeContainers = __bind(this.resizeContainers, this);
-      this.resetZoom = __bind(this.resetZoom, this);
       this.watchScroll = __bind(this.watchScroll, this);
       this.scrollToPage = __bind(this.scrollToPage, this);
       this.scrollTo = __bind(this.scrollTo, this);
@@ -49427,23 +49426,34 @@ var ProgressBar = (function ProgressBarClosure() {
       this.pageHeight = 0;
       this.scrollOffset = 0;
       this.pageContainers = [];
-      this._zoomIn = function(amount) {
+      this._doZoom = _.throttle((function(visibleLimits, fnSetVisibleLimits) {
+        _this.log.warn("Throttled do zoom.");
+        _this.resizeContainers();
+        _this.scrollChanged();
+        if (visibleLimits) {
+          return fnSetVisibleLimits(visibleLimits.first, visibleLimits.last);
+        }
+      }), 2000);
+      this._zi = function(amount, visibleLimits, fnSetVisibleLimits) {
         amount = amount || 0.1;
         _this.currentZoom += amount;
-        return _this.resizeContainers();
+        return _this._doZoom(visibleLimits, fnSetVisibleLimits);
       };
-      this._zoomOut = function() {
-        var amount;
+      this._zo = function(amount, visibleLimits, fnSetVisibleLimits) {
         amount = amount || 0.1;
         _this.currentZoom -= amount;
         if (_this.currentZoom < 0.1) {
           _this.currentZoom = 0.1;
         }
-        _this.resizeContainers();
-        return _this.scrollChanged();
+        return _this._doZoom(visibleLimits, fnSetVisibleLimits);
       };
-      this.zoomIn = _.throttle(this._zoomIn, 500, {});
-      this.zoomOut = _.throttle(this._zoomOut, 500, {});
+      this._rz = function(visibleLimits, fnSetVisibleLimits) {
+        _this.currentZoom = _this.defaultZoom || 1;
+        return _this._doZoom(visibleLimits, fnSetVisibleLimits);
+      };
+      this.zoomIn = this._zi;
+      this.zoomOut = this._zo;
+      this.resetZoom = this._rz;
     }
 
     PdfHtmlUI.prototype.setup = function(model, renderService) {
@@ -49658,15 +49668,10 @@ var ProgressBar = (function ProgressBarClosure() {
       return state;
     };
 
-    PdfHtmlUI.prototype.resetZoom = function() {
-      this.currentZoom = this.defaultZoom;
-      this.resizeContainers();
-      return this.scrollChanged();
-    };
-
     PdfHtmlUI.prototype.resizeContainers = function() {
       var pgeTop, scrTop, viewport, _ref, _ref1,
         _this = this;
+      this.log.warn("Resizing containers.");
       if (this.pageContainers.length < 1) {
         return;
       }
@@ -50042,7 +50047,10 @@ var ProgressBar = (function ProgressBarClosure() {
               query: query,
               highlightAll: true
             },
-            pageMatches: matches
+            pageMatches: matches,
+            updateMatchPosition: function(pageIdx, i, textDivs, beginDivIdx, endDivIdx) {
+              return _this.log.warn("OK Here's the missing function. What do I do now?");
+            }
           };
           return textLayer.updateMatches();
         }
@@ -50595,20 +50603,15 @@ var ProgressBar = (function ProgressBarClosure() {
     };
 
     PdfService.prototype.zoomIn = function(amount) {
-      this.log.log('SVC: Zoom In', this.visibleLimits);
-      this.htmlUI.zoomIn(amount);
-      if (this.visibleLimits) {
-        return this.setVisibleLimits(this.visibleLimits.first, this.visibleLimits.last);
-      }
+      return this.htmlUI.zoomIn(amount, this.visibleLimits, this.setVisibleLimits);
     };
 
     PdfService.prototype.zoomOut = function(amount) {
-      this.log.log('SVC: Zoom Out', this.visibleLimits);
-      return this.htmlUI.zoomOut(amount);
+      return this.htmlUI.zoomOut(amount, this.visibleLimits, this.setVisibleLimits);
     };
 
     PdfService.prototype.resetZoom = function() {
-      return this.htmlUI.resetZoom();
+      return this.htmlUI.resetZoom(this.visibleLimits, this.setVisibleLimits);
     };
 
     return PdfService;

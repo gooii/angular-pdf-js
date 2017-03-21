@@ -235,19 +235,13 @@ class PdfService
     @renderService.highlightText(@searchResults.query, @searchResults.matches)
 
   zoomIn: (amount) =>
-    @log.log('SVC: Zoom In', @visibleLimits)
-    @htmlUI.zoomIn(amount)
-    if @visibleLimits
-      @setVisibleLimits(@visibleLimits.first,@visibleLimits.last)
+    @htmlUI.zoomIn(amount, @visibleLimits, @setVisibleLimits)
 
   zoomOut: (amount) =>
-    @log.log('SVC: Zoom Out', @visibleLimits)
-    @htmlUI.zoomOut(amount)
-#    if @visibleLimits
-#      @setVisibleLimits(@visibleLimits.first,@visibleLimits.last)
+    @htmlUI.zoomOut(amount, @visibleLimits, @setVisibleLimits)
 
   resetZoom: () =>
-    @htmlUI.resetZoom()
+    @htmlUI.resetZoom(@visibleLimits, @setVisibleLimits)
 
 app = angular.module 'angular-pdf-js'
 app.service 'PdfService', PdfService
